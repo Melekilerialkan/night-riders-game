@@ -2,168 +2,159 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Night Riders - Co-op Maze</title>
+  <!-- Dokunmatik yakınlaştırmayı engeller (Mobil oyun için kritik) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Night Riders - Gece Sürüşü</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { touch-action: manipulation; } /* Çift tıklama zoomunu önler */
+  </style>
 </head>
-<body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-center p-4">
+<body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2">
 
   <!-- Üst Bilgi Paneli -->
-  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4 flex justify-between items-center shadow-lg">
+  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-sm">
     <div>
-      <span class="text-xs text-slate-400 block">SENİN ROLÜN</span>
-      <span id="roleText" class="font-bold text-lg text-yellow-400">Eşleşiliyor...</span>
+      <span class="text-slate-400 block text-xs">ROLÜN</span>
+      <span id="roleText" class="font-bold text-yellow-400">Bekleniyor...</span>
+    </div>
+    <div class="text-center">
+      <span class="text-slate-400 block text-xs">SEVİYE</span>
+      <span id="levelText" class="font-bold text-emerald-400">1</span>
     </div>
     <div class="text-right">
-      <span class="text-xs text-slate-400 block">KASK SAĞLIĞI (CAN)</span>
-      <span id="livesText" class="font-bold text-xl text-red-500">❤️ ❤️ ❤️</span>
+      <span class="text-slate-400 block text-xs">CAN</span>
+      <span id="livesText" class="font-bold text-red-500">❤️ ❤️ ❤️</span>
     </div>
   </div>
 
-  <!-- Oyun Canvası ve Sinyal Mesajı -->
-  <div class="relative">
-    <canvas id="gameCanvas" width="400" height="400" class="border-2 border-slate-700 rounded-xl bg-slate-900 shadow-2xl"></canvas>
+  <div id="sysMsg" class="h-6 text-yellow-300 font-bold mb-2 animate-pulse text-sm text-center">Eşleşme bekleniyor...</div>
+
+  <!-- Oyun Canvası -->
+  <canvas id="gameCanvas" width="360" height="360" class="border-2 border-slate-700 rounded-xl bg-slate-900 shadow-2xl w-full max-w-[360px]"></canvas>
     
-    <div id="cmdOverlay" class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-yellow-500/90 text-black font-extrabold text-2xl px-6 py-3 rounded-full animate-bounce shadow-lg">
-      <!-- Hızlı Sinyal Burada Yanıp Söner -->
-    </div>
-  </div>
-
   <!-- Hızlı Telsiz Komut Butonları -->
-  <div class="max-w-md w-full grid grid-cols-4 gap-2 mt-4">
-    <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 hover:bg-red-500 py-2 rounded-lg font-bold text-sm shadow">🛑 DUR</button>
-    <button onclick="sendCmd('⬅️ SOL')" class="bg-slate-800 hover:bg-slate-700 py-2 rounded-lg font-bold text-sm border border-slate-700">⬅️ SOL</button>
-    <button onclick="sendCmd('➡️ SAĞ')" class="bg-slate-800 hover:bg-slate-700 py-2 rounded-lg font-bold text-sm border border-slate-700">➡️ SAĞ</button>
-    <button onclick="sendCmd('🏍️ BAS GAZA')" class="bg-emerald-600 hover:bg-emerald-500 py-2 rounded-lg font-bold text-sm shadow">🏍️ GAZA BAS</button>
+  <div class="w-full max-w-[360px] grid grid-cols-4 gap-1 mt-4">
+    <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 active:bg-red-500 py-3 rounded-lg font-bold text-xs shadow">🛑 DUR</button>
+    <button onclick="sendCmd('⚠️ TUZAK')" class="bg-orange-600 active:bg-orange-500 py-3 rounded-lg font-bold text-xs shadow">⚠️ TUZAK</button>
+    <button onclick="sendCmd('🏍️ GEL')" class="bg-emerald-600 active:bg-emerald-500 py-3 rounded-lg font-bold text-xs shadow">🏍️ GEL</button>
+    <button onclick="sendCmd('👍 TEMİZ')" class="bg-blue-600 active:bg-blue-500 py-3 rounded-lg font-bold text-xs shadow">👍 TEMİZ</button>
   </div>
 
-  <p class="text-xs text-slate-500 mt-4">Karakterini Yön Tuşları (W, A, S, D) ile hareket ettir.</p>
+  <!-- MOBİL YÖN TUŞLARI (D-PAD) -->
+  <div class="mt-6 grid grid-cols-3 gap-2 w-48 mx-auto md:hidden">
+    <div></div>
+    <button onclick="sendMove('UP')" class="bg-slate-700 active:bg-slate-500 p-4 rounded-xl text-2xl shadow-lg border-b-4 border-slate-900">⬆️</button>
+    <div></div>
+    <button onclick="sendMove('LEFT')" class="bg-slate-700 active:bg-slate-500 p-4 rounded-xl text-2xl shadow-lg border-b-4 border-slate-900">⬅️</button>
+    <button onclick="sendMove('DOWN')" class="bg-slate-700 active:bg-slate-500 p-4 rounded-xl text-2xl shadow-lg border-b-4 border-slate-900">⬇️</button>
+    <button onclick="sendMove('RIGHT')" class="bg-slate-700 active:bg-slate-500 p-4 rounded-xl text-2xl shadow-lg border-b-4 border-slate-900">➡️</button>
+  </div>
 
   <script>
     const socket = io();
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    const tileSize = canvas.width / 8;
 
-    let myRole = null;
-    let currentMap = [];
-    let players = [];
-    let gateOpen = false;
+    let myRole = null, myId = null;
+    let currentMap = [], players = [];
+    let driverId = null, together = false;
+    let gridSize = 6; 
 
     socket.on('roleAssigned', ({ role, lives }) => {
       myRole = role;
-      document.getElementById('roleText').innerText = role === 'player1' ? '🔵 Mavi Kask (Dikey Görüş)' : '🔴 Kırmızı Kask (Yatay Görüş)';
+      myId = socket.id;
+      document.getElementById('roleText').innerText = role === 'player1' ? '🔵 Mavi Kask' : '🔴 Kırmızı Kask';
       updateLives(lives);
     });
 
     socket.on('gameState', (data) => {
       currentMap = data.map;
       players = data.players;
-      gateOpen = data.gateOpen;
+      driverId = data.driverId;
+      together = data.together;
+      gridSize = data.gridSize;
+      
+      document.getElementById('levelText').innerText = data.level;
       updateLives(data.lives);
       render();
     });
 
-    socket.on('wallHit', ({ lives, hitBy }) => {
+    socket.on('wallHit', ({ lives }) => {
       updateLives(lives);
-      canvas.classList.add('border-red-500', 'animate-pulse');
-      setTimeout(() => canvas.classList.remove('border-red-500', 'animate-pulse'), 500);
+      canvas.classList.add('border-red-500');
+      setTimeout(() => canvas.classList.remove('border-red-500'), 300);
     });
 
-    socket.on('gateUnlocked', () => {
-      showCmd("🔓 GARAJ KAPISI AÇILDI!");
-    });
-
-    socket.on('gameWin', () => {
-      alert("🎉 TEBRİKLER! İki kask da motora ulaştı, kaçış başarılı!");
-    });
-
-    socket.on('gameOver', () => {
-      alert("💥 Kask sağlığı bitti! Baştan başlıyorsunuz...");
-    });
-
-    socket.on('receiveCommand', (cmd) => {
-      showCmd(cmd);
+    socket.on('msg', (text) => {
+      document.getElementById('sysMsg').innerText = text;
     });
 
     function updateLives(l) {
       document.getElementById('livesText').innerText = '❤️ '.repeat(l);
     }
 
-    function showCmd(msg) {
-      const overlay = document.getElementById('cmdOverlay');
-      overlay.innerText = msg;
-      overlay.classList.remove('hidden');
-      setTimeout(() => overlay.classList.add('hidden'), 1500);
-    }
+    function sendMove(dir) { socket.emit('move', dir); }
+    function sendCmd(cmd) { socket.emit('quickCommand', cmd); document.getElementById('sysMsg').innerText = `Sen: ${cmd}`; }
 
-    function sendCmd(cmd) {
-      socket.emit('quickCommand', cmd);
-    }
-
-    // Tuş Dinleyici
     window.addEventListener('keydown', (e) => {
-      const dirMap = {
-        ArrowUp: 'UP', KeyW: 'UP',
-        ArrowDown: 'DOWN', KeyS: 'DOWN',
-        ArrowLeft: 'LEFT', KeyA: 'LEFT',
-        ArrowRight: 'RIGHT', KeyD: 'RIGHT'
-      };
-      if (dirMap[e.code]) {
-        socket.emit('move', dirMap[e.code]);
-      }
+      const dirMap = { ArrowUp: 'UP', KeyW: 'UP', ArrowDown: 'DOWN', KeyS: 'DOWN', ArrowLeft: 'LEFT', KeyA: 'LEFT', ArrowRight: 'RIGHT', KeyD: 'RIGHT' };
+      if (dirMap[e.code]) { e.preventDefault(); sendMove(dirMap[e.code]); }
     });
 
-    // Canvas Çizim Mantığı
     function render() {
+      const tileSize = canvas.width / gridSize;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Grid Izgarası
-      ctx.strokeStyle = '#1e293b';
-      for (let i = 0; i < 8; i++) {
-        for (let j = 0; j < 8; j++) {
-          ctx.strokeRect(i * tileSize, j * tileSize, tileSize, tileSize);
-        }
-      }
+      // Izgara ve Harita Nesneleri
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          ctx.strokeStyle = '#1e293b';
+          ctx.strokeRect(c * tileSize, r * tileSize, tileSize, tileSize);
 
-      // Haritadaki Nesneleri Çiz
-      for (let r = 0; r < 8; r++) {
-        for (let c = 0; c < 8; c++) {
           const val = currentMap[r][c];
-          
-          if (val === 1) { // Dikey Duvar (Mavi)
-            ctx.fillStyle = '#3b82f6';
-            ctx.fillRect(c * tileSize + tileSize - 6, r * tileSize, 6, tileSize);
-          } else if (val === 2) { // Yatay Duvar (Kırmızı)
-            ctx.fillStyle = '#ef4444';
-            ctx.fillRect(c * tileSize, r * tileSize + tileSize - 6, tileSize, 6);
+          if (val === 1) { // Mavi Duvar
+            ctx.fillStyle = '#3b82f6'; ctx.fillRect(c * tileSize + tileSize - 6, r * tileSize, 6, tileSize);
+          } else if (val === 2) { // Kırmızı Duvar
+            ctx.fillStyle = '#ef4444'; ctx.fillRect(c * tileSize, r * tileSize + tileSize - 6, tileSize, 6);
           } else if (val === 3) { // Buton
             ctx.fillStyle = '#eab308';
-            ctx.beginPath();
-            ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 10, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 10, 0, Math.PI*2); ctx.fill();
           } else if (val === 4) { // Kapı
-            ctx.fillStyle = gateOpen ? '#10b981' : '#f97316';
-            ctx.fillRect(c * tileSize + 10, r * tileSize + 10, tileSize - 20, tileSize - 20);
-          } else if (val === 9) { // Motor (Çıkış)
-            ctx.font = '24px serif';
-            ctx.fillText('🏍️', c * tileSize + 10, r * tileSize + 35);
+            ctx.fillStyle = '#f97316'; ctx.fillRect(c * tileSize + 10, r * tileSize + 10, tileSize - 20, tileSize - 20);
+          } else if (val === 8) { // Motor (Haritada bekleyen)
+            ctx.font = '28px sans-serif'; ctx.fillText('🏍️', c * tileSize + 8, r * tileSize + 36);
+          } else if (val === 9) { // Garaj
+            ctx.font = '28px sans-serif'; ctx.fillText('🅿️', c * tileSize + 8, r * tileSize + 36);
           }
         }
       }
 
-      // Kaskları (Oyuncuları) Çiz
+      // Oyuncular (Kasklar)
       players.forEach(p => {
-        ctx.font = '24px serif';
-        const icon = p.role === 'player1' ? '🪖' : '🪖';
-        // Renk ayrımı için arka plan halkası
-        ctx.fillStyle = p.role === 'player1' ? '#3b82f644' : '#ef444444';
-        ctx.beginPath();
-        ctx.arc(p.x * tileSize + tileSize/2, p.y * tileSize + tileSize/2, 18, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.font = '24px sans-serif';
+        const isDriver = (driverId === p.id);
         
-        ctx.fillText(icon, p.x * tileSize + 12, p.y * tileSize + 36);
+        // Beraberlerse sadece şoförün olduğu yere ikisini birden (Motor üstünde) çiz
+        if (together) {
+          if (isDriver) {
+            ctx.fillText('🏍️', p.x * tileSize + 2, p.y * tileSize + 36); // Motor ve şoför
+            ctx.font = '16px sans-serif';
+            ctx.fillText('🪖', p.x * tileSize + 25, p.y * tileSize + 20); // Yolcu arkada
+          }
+          return; // Yolcuyu ayrıca çizme
+        }
+
+        // Eğer sadece biri motordaysa onu motorlu çiz
+        if (isDriver) {
+          ctx.fillText('🏍️', p.x * tileSize + 8, p.y * tileSize + 36);
+        } else {
+          // Normal Kask çizimi
+          ctx.fillStyle = p.role === 'player1' ? '#3b82f644' : '#ef444444';
+          ctx.beginPath(); ctx.arc(p.x * tileSize + tileSize/2, p.y * tileSize + tileSize/2, 18, 0, Math.PI*2); ctx.fill();
+          ctx.fillText('🪖', p.x * tileSize + 12, p.y * tileSize + 36);
+        }
       });
     }
   </script>
