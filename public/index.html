@@ -8,7 +8,6 @@
   <script src="/socket.io/socket.io.js"></script>
   <style>
     body { touch-action: manipulation; }
-    /* Mobil uyumluluk için Canvas'ı kapsayıcı div'e uydur */
     #canvas-container {
       width: 100%;
       max-width: 400px;
@@ -61,7 +60,6 @@
 
   <div id="sysMsg" class="h-auto min-h-[24px] text-yellow-300 font-bold mb-4 text-sm text-center px-2">Eşleşme bekleniyor...</div>
 
-  <!-- MOBİL UYUMLU CANVAS CONTAINER -->
   <div id="canvas-container">
     <canvas id="gameCanvas" width="400" height="400" class="border-2 border-slate-800 rounded-xl bg-zinc-700 shadow-2xl"></canvas>
   </div>
@@ -90,9 +88,12 @@
     const imgMaviKask = new Image(); imgMaviKask.src = '/assets/mavi-kask.png';
     const imgKirmiziKask = new Image(); imgKirmiziKask.src = '/assets/kırmızı-kask.png';
     const imgMotor = new Image(); imgMotor.src = '/assets/motor.png';
-    const imgMaviMotor = new Image(); imgMaviMotor.src = '/assets/mavi-motor.png';
-    const imgKirmiziMotor = new Image(); imgKirmiziMotor.src = '/assets/kırmızı-motor.png';
-    const imgBeraberMotor = new Image(); imgBeraberMotor.src = '/assets/beraber-motor.png';
+    
+    // YENİ İSİMLER BURAYA EKLENDİ
+    const imgMaviMotor = new Image(); imgMaviMotor.src = '/assets/motor-mavi.png';
+    const imgKirmiziMotor = new Image(); imgKirmiziMotor.src = '/assets/motor-kirmizi.png';
+    const imgBeraberMotor = new Image(); imgBeraberMotor.src = '/assets/motor-beraber.png';
+    
     const imgKapiKapali = new Image(); imgKapiKapali.src = '/assets/kapali-garaj.png';
     const imgKapiAcik = new Image(); imgKapiAcik.src = '/assets/acik-garaj.png';
 
@@ -178,7 +179,6 @@
     }
 
     function render() {
-      // Dinamik boyutlandırma için Canvas boyutlarını güncelle
       canvas.width = canvas.offsetWidth;
       canvas.height = canvas.offsetHeight;
       const tileSize = canvas.width / gridSize;
@@ -198,7 +198,6 @@
             ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
             ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 12, 0, Math.PI*2); ctx.fill();
           } else if (val === 8) { 
-            // MOTOR GÖRSELİ TAM HÜCRE BOYUTUNDA
             drawImageWithFallback(imgMotor, '🏍️', c * tileSize, r * tileSize, tileSize, tileSize, 4, 30);
           } else if (val === 9) { 
             if (!gateOpen) {
@@ -217,22 +216,18 @@
         
         if (together) {
           if (isDriver) {
-            // BERABER BİNİLDİĞİNDE ŞOFÖRÜN KONUMUNA ÇİZİLİR
             drawImageWithFallback(imgBeraberMotor, '🏍️', xPos, yPos, tileSize, tileSize, 4, 30);
           }
-          return; // Yolcu ayrıca çizilmez
+          return; 
         }
 
         if (isDriver) {
           const activeMotorImg = p.role === 'player1' ? imgMaviMotor : imgKirmiziMotor;
-          // ŞOFÖRLÜ MOTOR GÖRSELİ TAM HÜCRE BOYUTUNDA
           drawImageWithFallback(activeMotorImg, '🏍️', xPos, yPos, tileSize, tileSize, 4, 30);
         } else {
           const helmetImg = p.role === 'player1' ? imgMaviKask : imgKirmiziKask;
-          // Takım rengi yuvarlağı
           ctx.fillStyle = p.role === 'player1' ? '#3b82f644' : '#ef444444';
           ctx.beginPath(); ctx.arc(xPos + tileSize/2, yPos + tileSize/2, tileSize/2, 0, Math.PI*2); ctx.fill();
-          // KASK GÖRSELİ TAM HÜCRE BOYUTUNDA
           drawImageWithFallback(helmetImg, '🪖', xPos, yPos, tileSize, tileSize, 4, 30);
         }
       });
