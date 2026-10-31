@@ -11,29 +11,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let rooms = {};
 
-const TUTORIAL_STEPS = [
-  {
-    msg: "BÖLÜM 1: Arkadaşın gizli butonu görüyor. Ona telsizden 'GEL' de ve yönlendir!",
-    gridSize: 6,
-    map: [
-      [0, 0, 0, 0, 0, 3],
-      [0, 0, 0, 0, 0, 0],
-      [0, 0, 8, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 9]
-    ]
-  }
-];
+const TUTORIAL_STEP = {
+  gridSize: 3,
+  map: [
+    [0, 0, 3], // Sağ üstte buton
+    [0, 8, 0], // Ortada motor
+    [9, 0, 0]  // Sol altta garaj
+  ]
+};
 
-function generateRandomLevel(levelIndex) {
-  const size = Math.min(6 + (levelIndex * 2), 10);
+function generateLevel(levelIndex) {
+  // 3x3, 4x4, 5x5... şeklinde artar (Maks 10x10)
+  const size = Math.min(3 + levelIndex, 10);
   let map = Array(size).fill(0).map(() => Array(size).fill(0));
 
-  map[size-1][size-1] = 9; 
-  map[size-1][0] = 8;      
-  map[0][Math.floor(size/2)] = 3; 
+  map[size-1][size-1] = 9; // Garaj (Çıkış)
+  map[size-1][0] = 8;      // Motor
+  map[0][Math.floor(size/2)] = 3; // Buton
 
+  // Turuncu Asimetrik Duvarlar (%20 oranında)
   for (let r = 1; r < size - 1; r++) {
     for (let c = 1; c < size - 1; c++) {
       if (Math.random() < 0.20) {
@@ -54,7 +50,7 @@ io.on('connection', (socket) => {
       rooms[currentRoomId] = {
         players: [], levelIndex: 0, motorLives: 3, 
         gameMode: 'classic', timeLeft: 60, timerInterval: null,
-        gateOpen: false, driverId: null, together: false, map: [], gridSize: 6,
+        gateOpen: false, driverId: null, together: false, map: [], gridSize: 3,
         gameState: 'LOBBY', buttonVisibleTo: 'player1'
       };
     }
@@ -70,7 +66,8 @@ io.on('connection', (socket) => {
     const role = room.players.length === 0 ? 'player1' : 'player2';
     const initPos = role === 'player1' ? { x: 0, y: 0 } : { x: room.gridSize - 1, y: 0 };
     
-    room.players.push({ id: socket.id, name: name || 'Sürücü', role, x: initPos.x, y: initPos.y });
+    // Her oyuncunun kendi bireysel canı (3 can) ve motor canı (3 can)
+    room.players.push({ id: socket.id, name: name || 'Sürücü', role, x: initPos.x, y: initPos.y, lives: 3 });
     socket.emit('roleAssigned', { role });
 
     sendGameState(currentRoomId);
@@ -80,11 +77,12 @@ io.on('connection', (socket) => {
     if (!currentRoomId || !rooms[currentRoomId]) return;
     const room = rooms[currentRoomId];
 
-    if (room.gameState === 'LOBBY' && room.players.length === 2) {
+    if (room.players.length === 2) {
       room.gameMode = mode;
       room.levelIndex = startingLevel;
       room.gameState = 'PLAYING';
       room.motorLives = 3;
+      room.players.forEach(p => p.lives = 3);
       loadLevel(currentRoomId);
 
       if (room.gameMode === 'timed') {
@@ -95,8 +93,9 @@ io.on('connection', (socket) => {
           io.to(currentRoomId).emit('timerUpdate', room.timeLeft);
           if (room.timeLeft <= 0) {
             clearInterval(room.timerInterval);
-            restartRoom(currentRoomId);
+            room.gameState = 'GAMEOVER';
             io.to(currentRoomId).emit('msg', '⏰ Süre bitti! Polisler yakaladı.');
+            sendGameState(currentRoomId);
           }
         }, 1000);
       }
@@ -111,7 +110,7 @@ io.on('connection', (socket) => {
 
     const player = room.players.find(p => p.id === socket.id);
     if (!player) return;
-    if (room.together && room.driverId !== player.id) return; // Şoför sürer, yolcu karışamaz
+    if (room.together && room.driverId !== player.id) return;
 
     let newX = player.x, newY = player.y;
     if (dir === 'UP') newY--;
@@ -126,52 +125,57 @@ io.on('connection', (socket) => {
     
     let hitWall = false;
 
-    // Asimetrik Çarpışma Kontrolü
     if (player.role === 'player1') {
       if (dir === 'DOWN' && currentCell === 1) hitWall = true; 
       if (dir === 'UP' && cellTarget === 1) hitWall = true;    
       if (dir === 'RIGHT' && currentCell === 1) hitWall = true;
-      if (dir === 'LEFT' && cellTarget === 1) hitWall = true;
+      if (dir === 'LEFT' && currentCell === 1) hitWall = true;
     }
     if (player.role === 'player2') { 
       if (dir === 'RIGHT' && currentCell === 2) hitWall = true; 
       if (dir === 'LEFT' && cellTarget === 2) hitWall = true;   
       if (dir === 'UP' && cellTarget === 2) hitWall = true;
-      if (dir === 'DOWN' && currentCell === 2) hitWall = true;
+      if (dir === 'DOWN' && cellTarget === 2) hitWall = true;
     }
 
     if (hitWall) {
-      room.motorLives--;
-      io.to(currentRoomId).emit('motorHit', { motorLives: room.motorLives });
-      
-      // ÇARPIŞINCA MOTOR YERİNDE KALIR, OYUNCULAR (KASKLAR) RASTGELE BOŞ BİR KAREYE SAVRULUR
-      const emptySpots = [];
-      for(let r=0; r<room.gridSize; r++){
-        for(let c=0; c<room.gridSize; c++){
-          if(room.map[r][c] === 0) emptySpots.push({x: c, y: r});
-        }
-      }
-      if(emptySpots.length > 0) {
-        const p1 = room.players[0];
-        const p2 = room.players[1];
-        
-        const spot1 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
-        p1.x = spot1.x; p1.y = spot1.y;
+      if (room.together) {
+        // MOTORDAYKEN ÇARPARSAK: Motor canı gider, etrafa savrulurlar
+        room.motorLives--;
+        io.to(currentRoomId).emit('motorHit', { motorLives: room.motorLives });
 
-        if (emptySpots.length > 1) {
-          let spot2 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
-          while(spot2.x === spot1.x && spot2.y === spot1.y) {
-            spot2 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+        const emptySpots = [];
+        for(let r=0; r<room.gridSize; r++){
+          for(let c=0; c<room.gridSize; c++){
+            if(room.map[r][c] === 0) emptySpots.push({x: c, y: r});
           }
-          p2.x = spot2.x; p2.y = spot2.y;
         }
-      }
-      room.together = false; // Kaza yapınca ayrılırlar
+        if(emptySpots.length > 0) {
+          const p1 = room.players[0];
+          const p2 = room.players[1];
+          const spot1 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+          p1.x = spot1.x; p1.y = spot1.y;
+          if (emptySpots.length > 1) {
+            let spot2 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+            p2.x = spot2.x; p2.y = spot2.y;
+          }
+        }
+        room.together = false;
 
-      if (room.motorLives <= 0) {
-        if (room.timerInterval) clearInterval(room.timerInterval);
-        io.to(currentRoomId).emit('msg', '💥 Motor hurdaya çıktı! Bölüm yenileniyor...');
-        setTimeout(() => restartRoom(currentRoomId), 1500);
+        if (room.motorLives <= 0) {
+          if (room.timerInterval) clearInterval(room.timerInterval);
+          room.gameState = 'GAMEOVER';
+          io.to(currentRoomId).emit('msg', '💥 Motor hurdaya çıktı! Oyun bitti.');
+        }
+      } else {
+        // YALNIZKEN (KASKLA YÜRÜRKEN) ÇARPARSAK: Sadece o oyuncunun canı gider, savrulmaz!
+        player.lives--;
+        io.to(currentRoomId).emit('msg', `${player.name} duvara çarptı! Kendi Canı: ${player.lives}`);
+        if (player.lives <= 0) {
+          if (room.timerInterval) clearInterval(room.timerInterval);
+          room.gameState = 'GAMEOVER';
+          io.to(currentRoomId).emit('msg', `💥 ${player.name}'in canı bitti! Oyun bitti.`);
+        }
       }
       sendGameState(currentRoomId);
       return;
@@ -189,7 +193,6 @@ io.on('connection', (socket) => {
       passenger.x = newX; passenger.y = newY;
     }
 
-    // Butona sadece GÖRMEYEN kişi basabilir
     if (cellTarget === 3 && !room.gateOpen) { 
       if (player.role !== room.buttonVisibleTo) {
         room.gateOpen = true;
@@ -199,15 +202,13 @@ io.on('connection', (socket) => {
       }
     }
 
-    // MOTORA BİNME (Sadece şoför yoksa ilk gelen biner)
     if (cellTarget === 8 && !room.driverId) { 
       room.driverId = player.id;
-      room.map[newY][newX] = 0; // Motor haritadan silinir, oyuncunun altına geçer
+      room.map[newY][newX] = 0; 
       io.to(currentRoomId).emit('playSound', 'motorCalisti');
       io.to(currentRoomId).emit('msg', '🏍️ Motora binildi! Şimdi diğer oyuncuyu yanına al.');
     }
 
-    // ARKADAŞI ARKAYA ALMA
     if (room.driverId === player.id && !room.together) { 
       const otherPlayer = room.players.find(p => p.id !== room.driverId);
       if (player.x === otherPlayer.x && player.y === otherPlayer.y) {
@@ -218,12 +219,13 @@ io.on('connection', (socket) => {
 
     if (cellTarget === 9 && room.together) { 
       if (room.levelIndex === 0) {
+        // EĞİTİM BİTTİĞİNDE LOBİYE DÖN
         room.gameState = 'LOBBY';
         if (room.timerInterval) clearInterval(room.timerInterval);
-        io.to(currentRoomId).emit('msg', '🎉 Eğitim Başarıyla Tamamlandı!');
+        io.to(currentRoomId).emit('msg', '🎉 Eğitim Tamamlandı! Lobiye dönülüyor...');
       } else {
         room.levelIndex++;
-        io.to(currentRoomId).emit('msg', `🎉 Seviye ${room.levelIndex} Tamamlandı!`);
+        io.to(currentRoomId).emit('msg', `🎉 Seviye ${room.levelIndex} Başlıyor!`);
         loadLevel(currentRoomId);
       }
     }
@@ -236,6 +238,17 @@ io.on('connection', (socket) => {
     const sender = rooms[currentRoomId].players.find(p => p.id === socket.id);
     const senderName = sender ? sender.name : 'Partner';
     socket.to(currentRoomId).emit('popupMessage', { name: senderName, text: cmd });
+  });
+
+  socket.on('restartGame', () => {
+    if (!currentRoomId || !rooms[currentRoomId]) return;
+    const room = rooms[currentRoomId];
+    room.gameState = 'LOBBY';
+    room.levelIndex = 0;
+    room.motorLives = 3;
+    room.players.forEach(p => p.lives = 3);
+    if (room.timerInterval) clearInterval(room.timerInterval);
+    sendGameState(currentRoomId);
   });
 
   socket.on('disconnect', () => {
@@ -254,7 +267,7 @@ io.on('connection', (socket) => {
 
 function loadLevel(roomId) {
   const room = rooms[roomId];
-  const levelData = room.levelIndex === 0 ? TUTORIAL_STEPS[0] : generateRandomLevel(room.levelIndex);
+  const levelData = room.levelIndex === 0 ? TUTORIAL_STEP : generateLevel(room.levelIndex);
   
   room.map = JSON.parse(JSON.stringify(levelData.map));
   room.gridSize = levelData.gridSize;
@@ -266,13 +279,6 @@ function loadLevel(roomId) {
 
   if(room.players[0]) { room.players[0].x = 0; room.players[0].y = 0; }
   if(room.players[1]) { room.players[1].x = room.gridSize - 1; room.players[1].y = 0; }
-}
-
-function restartRoom(roomId) {
-  const room = rooms[roomId];
-  room.motorLives = 3;
-  loadLevel(roomId);
-  sendGameState(roomId);
 }
 
 function sendGameState(roomId) {

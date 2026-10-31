@@ -23,6 +23,7 @@
 </head>
 <body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2 relative">
 
+  <!-- İSİM VE ODA KODU EKRANI -->
   <div id="nameScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center">
     <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">NIGHT RIDERS</h1>
     <p class="text-slate-400 mb-6 text-sm">Gece Sürüşü İşbirliği Bulmacası</p>
@@ -33,6 +34,7 @@
     </div>
   </div>
 
+  <!-- LOBİ EKRANI -->
   <div id="lobbyScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center hidden">
     <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">LOBİ</h1>
     <p class="text-slate-400 mb-6 text-sm" id="lobbyStatus">Arkadaşın bekleniyor...</p>
@@ -44,9 +46,9 @@
         <button onclick="setMode('timed')" id="btnTimed" class="flex-1 bg-slate-800 text-slate-300 py-2 rounded-lg font-bold text-xs">Zamana Karşı</button>
       </div>
       <ul class="text-xs text-slate-300 space-y-2">
-        <li>🧱 Duvarlar turuncu görünür, ancak <b>yalnızca senin duvarların</b> sana çarpar.</li>
-        <li>🔘 Butonu göremeyen kişi basabilir! Arkadaşını yönlendir.</li>
-        <li>💥 Duvara çarpınca motor sabit kalır, kasklar rastgele savrulur!</li>
+        <li>🗺️ Harita 3x3'ten başlayarak her bölümde büyür.</li>
+        <li>🚶 Yalnızken çarparsan sadece kendi canın gider (savrulmazsın).</li>
+        <li>🏍️ Motordayken çarparsanız ortak motor canı gider ve savrulursunuz!</li>
       </ul>
     </div>
     
@@ -56,48 +58,67 @@
     </div>
   </div>
 
+  <!-- OYUN BİTTİ (TEKRAR DENE) EKRANI -->
+  <div id="gameOverScreen" class="absolute inset-0 bg-slate-950/90 z-50 flex flex-col items-center justify-center p-4 text-center hidden">
+    <h1 class="text-4xl font-extrabold text-red-500 mb-2">OYUN BİTTİ</h1>
+    <p class="text-slate-300 mb-6 text-sm" id="gameOverReason">Canlar tükendi veya süre bitti.</p>
+    <button onclick="requestRestart()" class="bg-yellow-500 hover:bg-yellow-400 text-slate-950 px-8 py-3 rounded-xl font-bold shadow-lg text-base">Tekrar Dene</button>
+  </div>
+
+  <!-- TELSİZ POP-UP BİLDİRİMİ -->
   <div id="popupOverlay" class="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center hidden pointer-events-none">
     <div class="bg-slate-900 border-2 border-yellow-400 px-8 py-6 rounded-2xl text-center shadow-2xl animate-bounce">
       <span id="popupSender" class="text-xs text-yellow-400 block mb-1 uppercase tracking-widest font-bold">Telsiz Mesajı</span>
-      <h2 id="popupText" class="text-3xl font-extrabold text-white">DUR!</h2>
+      <h2 id="popupText" class="text-2xl font-extrabold text-white">DUR!</h2>
     </div>
   </div>
 
-  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-sm relative">
+  <!-- OYUN ÜST BARI (ÇİFT CAN GÖSTERGESİ) -->
+  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-xs relative">
     <div>
-      <span class="text-slate-400 block text-xs">ROLÜN</span>
-      <span id="roleText" class="font-bold text-yellow-400">Bekleniyor...</span>
+      <span class="text-slate-400 block">BİZİM CAN</span>
+      <span id="playerLives" class="font-bold text-blue-400">❤️❤️❤️</span>
     </div>
     <div class="text-center">
-      <span class="text-slate-400 block text-xs">SEVİYE / SÜRE</span>
+      <span class="text-slate-400 block">SEVİYE</span>
       <span id="levelText" class="font-bold text-emerald-400">-</span>
     </div>
     <div class="text-right">
-      <span class="text-slate-400 block text-xs">MOTOR CANI</span>
-      <span id="livesText" class="font-bold text-red-500">❤️ ❤️ ❤️</span>
+      <span class="text-slate-400 block">MOTOR CANI</span>
+      <span id="motorLivesText" class="font-bold text-red-500">❤️❤️❤️</span>
     </div>
   </div>
 
   <div id="sysMsg" class="h-auto min-h-[24px] text-yellow-300 font-bold mb-4 text-sm text-center px-2">Eşleşme bekleniyor...</div>
 
+  <!-- CANVAS -->
   <div id="canvas-container">
     <canvas id="gameCanvas" width="400" height="400" class="border-2 border-slate-800 rounded-xl bg-zinc-700 shadow-2xl"></canvas>
   </div>
     
-  <div class="w-full max-w-[400px] grid grid-cols-4 gap-1 mt-4">
-    <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 active:bg-red-500 py-3 rounded-lg font-bold text-xs shadow">🛑 DUR</button>
-    <button onclick="sendCmd('⚠️ TUZAK!')" class="bg-orange-600 active:bg-orange-500 py-3 rounded-lg font-bold text-xs shadow">⚠️ TUZAK</button>
-    <button onclick="sendCmd('🏍️ GEL!')" class="bg-emerald-600 active:bg-emerald-500 py-3 rounded-lg font-bold text-xs shadow">🏍️ GEL</button>
-    <button onclick="sendCmd('👍 TEMİZ!')" class="bg-blue-600 active:bg-blue-500 py-3 rounded-lg font-bold text-xs shadow">👍 TEMİZ</button>
+  <!-- TELSİZ DÜĞMELERİ VE ÖZEL YAZI GÖNDERME -->
+  <div class="w-full max-w-[400px] mt-4 space-y-2">
+    <div class="grid grid-cols-4 gap-1">
+      <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 active:bg-red-500 py-2 rounded-lg font-bold text-xs shadow">🛑 DUR</button>
+      <button onclick="sendCmd('⚠️ TUZAK!')" class="bg-orange-600 active:bg-orange-500 py-2 rounded-lg font-bold text-xs shadow">⚠️ TUZAK</button>
+      <button onclick="sendCmd('🏍️ GEL!')" class="bg-emerald-600 active:bg-emerald-500 py-2 rounded-lg font-bold text-xs shadow">🏍️ GEL</button>
+      <button onclick="sendCmd('👍 TEMİZ!')" class="bg-blue-600 active:bg-blue-500 py-2 rounded-lg font-bold text-xs shadow">👍 TEMİZ</button>
+    </div>
+    <!-- ÖZEL TELSİZ MESAJI YAZMA KUTUSU -->
+    <div class="flex gap-2">
+      <input type="text" id="customMsgInput" placeholder="Özel telsiz mesajı yaz..." class="flex-1 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-yellow-400">
+      <button onclick="sendCustomCmd()" class="bg-yellow-500 hover:bg-yellow-400 text-slate-950 px-4 py-2 rounded-lg font-bold text-xs shadow">Gönder</button>
+    </div>
   </div>
 
-  <div class="mt-6 grid grid-cols-3 gap-2 w-48 mx-auto md:hidden">
+  <!-- MOBİL D-PAD -->
+  <div class="mt-4 grid grid-cols-3 gap-2 w-44 mx-auto md:hidden">
     <div></div>
-    <button onclick="sendMove('UP')" class="bg-slate-700 active:bg-slate-500 p-4 rounded-xl text-2xl shadow-lg border-b-4 border-slate-900">⬆️</button>
+    <button onclick="sendMove('UP')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">⬆️</button>
     <div></div>
-    <button onclick="sendMove('LEFT')" class="bg-slate-700 active:bg-slate-500 p-4 rounded-xl text-2xl shadow-lg border-b-4 border-slate-900">⬅️</button>
-    <button onclick="sendMove('DOWN')" class="bg-slate-700 active:bg-slate-500 p-4 rounded-xl text-2xl shadow-lg border-b-4 border-slate-900">⬇️</button>
-    <button onclick="sendMove('RIGHT')" class="bg-slate-700 active:bg-slate-500 p-4 rounded-xl text-2xl shadow-lg border-b-4 border-slate-900">➡️</button>
+    <button onclick="sendMove('LEFT')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">⬅️</button>
+    <button onclick="sendMove('DOWN')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">⬇️</button>
+    <button onclick="sendMove('RIGHT')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">➡️</button>
   </div>
 
   <script>
@@ -119,7 +140,7 @@
     let myRole = null, selectedMode = 'classic';
     let currentMap = [], players = [];
     let driverId = null, together = false, gateOpen = true;
-    let gridSize = 6, currentGameState = 'LOBBY'; 
+    let gridSize = 3, currentGameState = 'LOBBY'; 
 
     function joinGame() {
       const name = document.getElementById('playerNameInput').value.trim();
@@ -146,7 +167,6 @@
 
     socket.on('roleAssigned', ({ role }) => {
       myRole = role;
-      document.getElementById('roleText').innerText = role === 'player1' ? '🔵 Mavi' : '🔴 Kırmızı';
     });
 
     socket.on('gameState', (data) => {
@@ -156,11 +176,13 @@
       currentGameState = data.gameState;
       
       const lobby = document.getElementById('lobbyScreen');
+      const gameOverScreen = document.getElementById('gameOverScreen');
       const lobbyBtns = document.getElementById('lobbyButtons');
       const status = document.getElementById('lobbyStatus');
       
       if (currentGameState === 'LOBBY') {
         lobby.classList.remove('hidden');
+        gameOverScreen.classList.add('hidden');
         if (players.length === 2) {
           status.innerText = "İki oyuncu da hazır!";
           status.classList.replace('text-slate-400', 'text-emerald-400');
@@ -170,20 +192,29 @@
           status.classList.replace('text-emerald-400', 'text-slate-400');
           lobbyBtns.classList.add('hidden');
         }
+      } else if (currentGameState === 'GAMEOVER') {
+        lobby.classList.add('hidden');
+        gameOverScreen.classList.remove('hidden');
       } else {
         lobby.classList.add('hidden');
+        gameOverScreen.classList.add('hidden');
       }
 
-      let infoText = data.level === 0 ? "Eğitim" : `Seviye ${data.level}`;
-      if (data.gameMode === 'timed') infoText += ` (${data.timeLeft}sn)`;
+      let infoText = data.level === 0 ? "Eğitim" : `Seviye ${data.level} (${gridSize}x${gridSize})`;
+      if (data.gameMode === 'timed') infoText += ` - ${data.timeLeft}sn`;
       document.getElementById('levelText').innerText = infoText;
       
-      updateMotorLives(data.motorLives);
+      document.getElementById('motorLivesText').innerText = '❤️ '.repeat(Math.max(0, data.motorLives));
+      
+      const me = players.find(p => p.id === socket.id);
+      if (me) {
+        document.getElementById('playerLives').innerText = '❤️ '.repeat(Math.max(0, me.lives));
+      }
+
       if(currentGameState === 'PLAYING') render();
     });
 
     socket.on('motorHit', ({ motorLives }) => {
-      updateMotorLives(motorLives);
       canvas.classList.add('border-red-500');
       setTimeout(() => canvas.classList.remove('border-red-500'), 300);
     });
@@ -197,19 +228,16 @@
       document.getElementById('popupText').innerText = text;
       const overlay = document.getElementById('popupOverlay');
       overlay.classList.remove('hidden');
-      setTimeout(() => overlay.classList.add('hidden'), 2000);
+      setTimeout(() => overlay.classList.add('hidden'), 2500);
     });
 
     socket.on('playSound', (type) => {
       if (type === 'motorCalisti') { 
         audioMotor.currentTime = 0; 
-        audioMotor.play().catch(e => console.log("Ses çalma engeli.")); 
+        audioMotor.play().catch(e => console.log("Ses engeli.")); 
       }
     });
 
-    function updateMotorLives(l) { 
-      document.getElementById('livesText').innerText = '❤️ '.repeat(Math.max(0, l)); 
-    }
     function sendMove(dir) { socket.emit('move', dir); }
     function sendCmd(cmd) { 
       socket.emit('quickCommand', cmd); 
@@ -217,9 +245,17 @@
       document.getElementById('popupText').innerText = cmd;
       const overlay = document.getElementById('popupOverlay');
       overlay.classList.remove('hidden');
-      setTimeout(() => overlay.classList.add('hidden'), 2000);
+      setTimeout(() => overlay.classList.add('hidden'), 2500);
+    }
+    function sendCustomCmd() {
+      const input = document.getElementById('customMsgInput');
+      const text = input.value.trim();
+      if(!text) return;
+      sendCmd(text);
+      input.value = '';
     }
     function startGame(level) { socket.emit('startGame', { mode: selectedMode, startingLevel: level }); }
+    function requestRestart() { socket.emit('restartGame'); }
 
     window.addEventListener('keydown', (e) => {
       const dirMap = { ArrowUp: 'UP', KeyW: 'UP', ArrowDown: 'DOWN', KeyS: 'DOWN', ArrowLeft: 'LEFT', KeyA: 'LEFT', ArrowRight: 'RIGHT', KeyD: 'RIGHT' };
@@ -247,13 +283,12 @@
           ctx.strokeRect(c * tileSize, r * tileSize, tileSize, tileSize);
 
           const val = currentMap[r][c];
-          // DİKEY (1) VE YATAY (2) DUVARLARIN NET GÖRÜNMESİ SAĞLANDI
           if (val === 1 || val === 2) { 
             ctx.fillStyle = '#f97316'; 
             if (val === 1) {
-              ctx.fillRect(c * tileSize + tileSize - 8, r * tileSize, 8, tileSize); // Dikey duvar kalınlaştırıldı
+              ctx.fillRect(c * tileSize + tileSize - 8, r * tileSize, 8, tileSize);
             } else {
-              ctx.fillRect(c * tileSize, r * tileSize + tileSize - 8, tileSize, 8); // Yatay duvar kalınlaştırıldı
+              ctx.fillRect(c * tileSize, r * tileSize + tileSize - 8, tileSize, 8);
             }
           } else if (val === 3) { 
             ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
