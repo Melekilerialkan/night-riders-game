@@ -23,13 +23,14 @@
 </head>
 <body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2 relative">
 
-  <!-- İSİM GİRME EKRANI -->
+  <!-- İSİM VE ODA KODU GİRME EKRANI -->
   <div id="nameScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center">
     <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">NIGHT RIDERS</h1>
     <p class="text-slate-400 mb-6 text-sm">Gece Sürüşü İşbirliği Bulmacası</p>
-    <div class="bg-slate-900 p-5 rounded-xl border border-slate-700 w-full max-w-sm shadow-2xl">
-      <input type="text" id="playerNameInput" placeholder="Adını gir (Örn: Melek)" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl text-white mb-4 text-center font-bold focus:outline-none focus:border-yellow-400">
-      <button onclick="saveName()" class="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 py-3 rounded-xl font-bold shadow-lg">Oyuna Gir</button>
+    <div class="bg-slate-900 p-5 rounded-xl border border-slate-700 w-full max-w-sm shadow-2xl space-y-3">
+      <input type="text" id="playerNameInput" placeholder="Adın (Örn: Melek)" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl text-white text-center font-bold focus:outline-none focus:border-yellow-400">
+      <input type="text" id="roomCodeInput" placeholder="Oda Kodu (Örn: 1234)" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl text-white text-center font-bold focus:outline-none focus:border-yellow-400">
+      <button onclick="joinGame()" class="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 py-3 rounded-xl font-bold shadow-lg">Odaya Gir</button>
     </div>
   </div>
 
@@ -45,7 +46,7 @@
         <button onclick="setMode('timed')" id="btnTimed" class="flex-1 bg-slate-800 text-slate-300 py-2 rounded-lg font-bold text-xs">Zamana Karşı</button>
       </div>
       <ul class="text-xs text-slate-300 space-y-2">
-        <li>🧱 Tüm duvarlar turuncu görünür, ancak <b>yalnızca senin rengin olanlar</b> sana çarpar.</li>
+        <li>🧱 Duvarlar turuncu görünür, ancak <b>yalnızca senin rengin olanlar</b> sana çarpar.</li>
         <li>🔘 Butonu göremeyen kişi basabilir! Arkadaşını yönlendir.</li>
         <li>💥 Duvara çarpınca motor hasar alır (3 canı vardır), etrafa savrulursunuz!</li>
       </ul>
@@ -127,12 +128,20 @@
     let driverId = null, together = false, gateOpen = true;
     let gridSize = 6, currentGameState = 'LOBBY'; 
 
-    function saveName() {
+    function joinGame() {
       const name = document.getElementById('playerNameInput').value.trim();
+      const roomCode = document.getElementById('roomCodeInput').value.trim();
       if (!name) { alert("Lütfen bir isim gir!"); return; }
+      if (!roomCode) { alert("Lütfen bir oda kodu gir!"); return; }
+      
       document.getElementById('nameScreen').classList.add('hidden');
-      socket.emit('setPlayerInfo', { name });
+      socket.emit('joinRoom', { name, roomCode });
     }
+
+    socket.on('roomFull', (msg) => {
+      alert(msg);
+      document.getElementById('nameScreen').classList.remove('hidden');
+    });
 
     function setMode(mode) {
       selectedMode = mode;
@@ -161,6 +170,10 @@
           status.innerText = "İki oyuncu da hazır!";
           status.classList.replace('text-slate-400', 'text-emerald-400');
           lobbyBtns.classList.remove('hidden');
+        } else {
+          status.innerText = "Arkadaşın bekleniyor (Oda Kodu ile girmeli)...";
+          status.classList.replace('text-emerald-400', 'text-slate-400');
+          lobbyBtns.classList.add('hidden');
         }
       } else {
         lobby.classList.add('hidden');
@@ -181,17 +194,15 @@
     });
 
     socket.on('msg', (text) => { 
-      const msgBox = document.getElementById('sysMsg');
-      msgBox.innerText = text; 
+      document.getElementById('sysMsg').innerText = text; 
     });
 
-    // POP-UP TELSİZ MESAJI GÖSTERİMİ
     socket.on('popupMessage', ({ name, text }) => {
       document.getElementById('popupSender').innerText = `${name} Telsizden Yazdı:`;
       document.getElementById('popupText').innerText = text;
       const overlay = document.getElementById('popupOverlay');
       overlay.classList.remove('hidden');
-      setTimeout(() => overlay.classList.add('hidden'), 2000); // 2 saniye sonra kapanır
+      setTimeout(() => overlay.classList.add('hidden'), 2000);
     });
 
     socket.on('playSound', (type) => {
@@ -241,11 +252,10 @@
           ctx.strokeRect(c * tileSize, r * tileSize, tileSize, tileSize);
 
           const val = currentMap[r][c];
-          // TÜM DUVARLAR TURUNCU ÇİZİLİR (ASİMETRİK İLLÜZYON)
           if (val === 1 || val === 2) { 
             ctx.fillStyle = '#f97316'; 
-            if (val === 1) ctx.fillRect(c * tileSize + tileSize - 6, r * tileSize, 6, tileSize); // Dikey
-            else ctx.fillRect(c * tileSize, r * tileSize + tileSize - 6, tileSize, 6); // Yatay
+            if (val === 1) ctx.fillRect(c * tileSize + tileSize - 6, r * tileSize, 6, tileSize);
+            else ctx.fillRect(c * tileSize, r * tileSize + tileSize - 6, tileSize, 6);
           } else if (val === 3) { 
             ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
             ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 12, 0, Math.PI*2); ctx.fill();
