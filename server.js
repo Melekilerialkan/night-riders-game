@@ -25,7 +25,6 @@ function generateLevel(levelIndex) {
   const size = Math.min(4 + Math.floor(levelIndex / 2), 10);
   let map = Array(size).fill(0).map(() => Array(size).fill(0));
 
-  // Garaj ve motorun konumları her bölümde rastgele/farklı yerlerde olsun (Köşeler hariç veya rastgele boşluklar)
   let garageX = Math.floor(Math.random() * (size - 2)) + 1;
   let garageY = Math.floor(Math.random() * (size - 2)) + 1;
   let motorX = Math.floor(Math.random() * (size - 2)) + 1;
@@ -37,15 +36,21 @@ function generateLevel(levelIndex) {
     motorX = Math.floor(Math.random() * (size - 2)) + 1;
   }
 
-  map[garageY][garageX] = 9; // Garaj
-  map[motorY][motorX] = 8;   // Motor
-  map[buttonY][buttonX] = 3; // Buton
+  // Başlangıç noktalarının üzerine obje gelmemesi için koruma
+  if (buttonX === 0 && buttonY === 0) buttonX = 1;
+  if (buttonX === size-1 && buttonY === 0) buttonY = 1;
 
-  // Turuncu Duvarlar
+  map[garageY][garageX] = 9; 
+  map[motorY][motorX] = 8;   
+  map[buttonY][buttonX] = 3; 
+
   for (let r = 0; r < size; r++) {
     for (let c = 0; c < size; c++) {
+      // 0,0 (Mavi Başlangıç) ve sağ üst (Kırmızı Başlangıç) noktalarına DUVAR KOYULAMAZ
+      if ((r === 0 && c === 0) || (r === 0 && c === size - 1)) continue;
+
       if (map[r][c] === 0 && Math.random() < 0.20) {
-        map[r][c] = Math.random() > 0.5 ? 1 : 2; // 1: Dikey, 2: Yatay
+        map[r][c] = Math.random() > 0.5 ? 1 : 2; 
       }
     }
   }
@@ -75,11 +80,17 @@ io.on('connection', (socket) => {
     }
 
     socket.join(currentRoomId);
-    const role = room.players.length === 0 ? 'player1' : 'player2';
-    const initPos = role === 'player1' ? { x: 0, y: 0 } : { x: room.gridSize - 1, y: 0 };
     
-    room.players.push({ id: socket.id, name: name || 'Sürücü', role, x: initPos.x, y: initPos.y, lives: 3 });
-    socket.emit('roleAssigned', { role });
+    // Rolleri kesin olarak ata ve eski karışıklıkları önle
+    let assignedRole = 'player1';
+    if (room.players.find(p => p.role === 'player1')) {
+      assignedRole = 'player2';
+    }
+    
+    const initPos = assignedRole === 'player1' ? { x: 0, y: 0 } : { x: room.gridSize - 1, y: 0 };
+    
+    room.players.push({ id: socket.id, name: name || 'Sürücü', role: assignedRole, x: initPos.x, y: initPos.y, lives: 3 });
+    socket.emit('roleAssigned', { role: assignedRole });
 
     sendGameState(currentRoomId);
   });
@@ -99,13 +110,12 @@ io.on('connection', (socket) => {
       if (room.timerInterval) clearInterval(room.timerInterval);
 
       if (room.gameMode === 'timed') {
-        room.timeLeft = 60 + (room.levelIndex * 15); // Bölüme göre süre
+        room.timeLeft = 60 + (room.levelIndex * 15);
         room.timerInterval = setInterval(() => {
           room.timeLeft--;
           io.to(currentRoomId).emit('timerUpdate', room.timeLeft);
           if (room.timeLeft <= 0) {
             clearInterval(room.timerInterval);
-            // SÜRE BİTİNCE BAŞTAN BAŞLAMAZ, SADECE BU BÖLÜMÜ YENİDEN YÜKLER (RETRY LEVEL)
             restartLevel(currentRoomId, '⏰ Süre bitti! Bölüm yeniden başlatılıyor...');
           }
         }, 1000);
@@ -126,7 +136,6 @@ io.on('connection', (socket) => {
     if (!player) return;
     if (room.together && room.driverId !== player.id) return;
 
-    // Hareket hakkı modu kontrolü
     if (room.gameMode === 'moves') {
       room.movesLeft--;
       if (room.movesLeft <= 0) {
@@ -143,17 +152,11 @@ io.on('connection', (socket) => {
 
     if (newX < 0 || newX >= room.gridSize || newY < 0 || newY >= room.gridSize) return;
 
-    const currentCell = room.map[player.y][player.x];
     const cellTarget = room.map[newY][newX];
-    
     let hitWall = false;
 
-    if (player.role === 'player1') {
-      if (currentCell === 1 || cellTarget === 1) hitWall = true;
-    }
-    if (player.role === 'player2') { 
-      if (currentCell === 2 || cellTarget === 2) hitWall = true;
-    }
+    // YENİ KUSURSUZ MANTIK: Kim olursan ol, ister gör ister görme; 1 (Dikey) ve 2 (Yatay) duvarların HİÇBİR YÖNÜNDEN GEÇEMEZSİN!
+    if (cellTarget === 1 || cellTarget === 2) hitWall = true;
 
     if (hitWall) {
       if (room.driverId) {
@@ -161,14 +164,13 @@ io.on('connection', (socket) => {
         io.to(currentRoomId).emit('motorHit', {});
 
         if (room.motorLives <= 0) {
-          // MOTOR CANI BİTİNCE TÜM OYUNU DEĞİL, KALDIĞI BÖLÜMÜ BAŞA SARAR
           restartLevel(currentRoomId, '💥 Motor hurdaya çıktı! Bölüm tekrarlanıyor...');
           return;
         } else {
-          // Rastgele savrulma
           const emptySpots = [];
           for(let r=0; r<room.gridSize; r++){
             for(let c=0; c<room.gridSize; c++){
+              // Hem boş kare olmalı hem de garaj/buton olmamalı (kaza sonrası temiz bir yere düşmek için)
               if(room.map[r][c] === 0) emptySpots.push({x: c, y: r});
             }
           }
@@ -289,8 +291,11 @@ function loadLevel(roomId) {
     room.movesLeft = 40 + (room.levelIndex * 10);
   }
 
-  if(room.players[0]) { room.players[0].x = 0; room.players[0].y = 0; }
-  if(room.players[1]) { room.players[1].x = room.gridSize - 1; room.players[1].y = 0; }
+  // Hangi oyuncunun koptuğuna vs bakmaksızın rollere göre doğma noktaları kesinleştirildi
+  room.players.forEach(p => {
+    if (p.role === 'player1') { p.x = 0; p.y = 0; }
+    if (p.role === 'player2') { p.x = room.gridSize - 1; p.y = 0; }
+  });
 }
 
 function restartLevel(roomId, msg) {
@@ -307,10 +312,13 @@ function sendGameState(roomId) {
     const filteredMap = room.map.map(row => row.map(cell => {
       if (cell === 8 || cell === 9) return cell;
       if (cell === 3) return p.role === room.buttonVisibleTo ? 3 : 0; 
+      
+      // SİHİRLİ FİLTRE BURADA: Oyuncular sadece kendi duvarlarını GÖREBİLİR!
       if (cell === 1 && p.role === 'player1') return 1; 
       if (cell === 2 && p.role === 'player2') return 2; 
-      return 0;
+      return 0; // Kendi duvarı değilse boş (0) görür ama üstte yazdığımız fizikten dolayı çarpar!
     }));
+    
     io.to(p.id).emit('gameState', {
       map: filteredMap, players: room.players, 
       motorLives: room.motorLives, level: room.levelIndex,
@@ -318,7 +326,7 @@ function sendGameState(roomId) {
       gridSize: room.gridSize, gateOpen: room.gateOpen,
       gameState: room.gameState, gameMode: room.gameMode, 
       timeLeft: room.timeLeft, movesLeft: room.movesLeft,
-      fogEnabled: room.levelIndex >= 3 // Seviye 3'ten sonra sisli ortam aktif!
+      fogEnabled: room.levelIndex >= 3
     });
   });
 }

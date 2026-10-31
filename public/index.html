@@ -23,7 +23,6 @@
 </head>
 <body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2 relative">
 
-  <!-- İSİM VE ODA KODU EKRANI -->
   <div id="nameScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center">
     <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">NIGHT RIDERS</h1>
     <p class="text-slate-400 mb-6 text-sm">Gece Sürüşü İşbirliği Bulmacası</p>
@@ -34,7 +33,6 @@
     </div>
   </div>
 
-  <!-- LOBİ EKRANI -->
   <div id="lobbyScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center hidden">
     <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">LOBİ</h1>
     <p class="text-slate-400 mb-6 text-sm" id="lobbyStatus">Arkadaşın bekleniyor...</p>
@@ -47,8 +45,8 @@
         <button onclick="setMode('moves')" id="btnMoves" class="bg-slate-800 text-slate-300 py-2 rounded-lg font-bold text-[10px]">Hamle Sınırı</button>
       </div>
       <ul class="text-xs text-slate-300 space-y-2">
-        <li>🔄 Can gidince **tüm oyunu değil, o bölümü** yeniden denersin.</li>
-        <li>🌫️ **Seviye 3'ten sonra** sisli ortam (kör nokta) başlar, telsizle haberleşmek şart olur!</li>
+        <li>🧱 Kendi duvarını görürsün ancak **GÖRMEDİĞİN DUVARA DA ÇARPARSIN!**</li>
+        <li>🗣️ Birbirinizi telsizle yönlendirmek ZORUNLUDUR!</li>
       </ul>
     </div>
     
@@ -58,7 +56,6 @@
     </div>
   </div>
 
-  <!-- TELSİZ POP-UP -->
   <div id="popupOverlay" class="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center hidden pointer-events-none">
     <div class="bg-slate-900 border-2 border-yellow-400 px-8 py-6 rounded-2xl text-center shadow-2xl animate-bounce">
       <span id="popupSender" class="text-xs text-yellow-400 block mb-1 uppercase tracking-widest font-bold">Telsiz Mesajı</span>
@@ -66,14 +63,13 @@
     </div>
   </div>
 
-  <!-- ÜST BAR -->
   <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-xs relative">
     <div>
       <span class="text-slate-400 block">CANIM</span>
       <span id="playerLives" class="font-bold text-blue-400">❤️❤️❤️</span>
     </div>
     <div class="text-center">
-      <span class="text-slate-400 block">SEVİYE / MOD DURUMU</span>
+      <span class="text-slate-400 block">SEVİYE / MOD</span>
       <span id="levelText" class="font-bold text-emerald-400">-</span>
     </div>
     <div class="text-right">
@@ -84,12 +80,10 @@
 
   <div id="sysMsg" class="h-auto min-h-[24px] text-yellow-300 font-bold mb-4 text-sm text-center px-2">Eşleşme bekleniyor...</div>
 
-  <!-- CANVAS -->
   <div id="canvas-container">
     <canvas id="gameCanvas" width="400" height="400" class="border-2 border-slate-800 rounded-xl bg-zinc-700 shadow-2xl"></canvas>
   </div>
     
-  <!-- TELSİZ -->
   <div class="w-full max-w-[400px] mt-4 space-y-2">
     <div class="grid grid-cols-4 gap-1">
       <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 active:bg-red-500 py-2 rounded-lg font-bold text-xs shadow">🛑 DUR</button>
@@ -103,7 +97,6 @@
     </div>
   </div>
 
-  <!-- MOBİL D-PAD -->
   <div class="mt-4 grid grid-cols-3 gap-2 w-44 mx-auto md:hidden">
     <div></div>
     <button onclick="sendMove('UP')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">⬆️</button>
@@ -270,18 +263,17 @@
       
       for (let r = 0; r < gridSize; r++) {
         for (let c = 0; c < gridSize; c++) {
-          // SİS (KÖR NOKTA) KONTROLÜ: Seviye 3'ten sonra oyuncuya 1 kare mesafe dışı karanlık olur
           let isVisible = true;
           if (fogEnabled && me) {
             const dist = Math.abs(me.x - c) + Math.abs(me.y - r);
-            if (dist > 1) isVisible = false; // 1 kareden uzaklar sisli/karanlık
+            if (dist > 1) isVisible = false; 
           }
 
           ctx.strokeStyle = '#27272a';
           ctx.strokeRect(c * tileSize, r * tileSize, tileSize, tileSize);
 
           if (!isVisible) {
-            ctx.fillStyle = '#09090b'; // Karanlık/Sis rengi
+            ctx.fillStyle = '#09090b'; 
             ctx.fillRect(c * tileSize, r * tileSize, tileSize, tileSize);
             continue;
           }
@@ -289,10 +281,11 @@
           const val = currentMap[r][c];
           if (val === 1 || val === 2) { 
             ctx.fillStyle = '#f97316'; 
-            if (val === 1) {
-              ctx.fillRect(c * tileSize + tileSize - 8, r * tileSize, 8, tileSize);
-            } else {
-              ctx.fillRect(c * tileSize, r * tileSize + tileSize - 8, tileSize, 8);
+            // DUVARLARI HÜCRENİN ORTASINA KALIN BİR BLOK OLARAK ÇİZİYORUZ
+            if (val === 1) { // DİKEY DUVAR ORTADA
+              ctx.fillRect(c * tileSize + (tileSize / 2) - 6, r * tileSize, 12, tileSize);
+            } else {         // YATAY DUVAR ORTADA
+              ctx.fillRect(c * tileSize, r * tileSize + (tileSize / 2) - 6, tileSize, 12);
             }
           } else if (val === 3) { 
             ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
@@ -312,7 +305,7 @@
       players.forEach(p => {
         if (fogEnabled && me) {
           const dist = Math.abs(me.x - p.x) + Math.abs(me.y - p.y);
-          if (dist > 1 && p.id !== me.id) return; // Uzaktaki partner siste görünmez
+          if (dist > 1 && p.id !== me.id) return; 
         }
 
         const isDriver = (driverId === p.id);
