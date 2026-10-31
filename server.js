@@ -11,7 +11,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let rooms = {};
 
-// Sadece Eğitim Bölümü Sabit
 const TUTORIAL_LEVEL = {
   gridSize: 6,
   map: [
@@ -24,19 +23,16 @@ const TUTORIAL_LEVEL = {
   ]
 };
 
-// Rastgele Harita Üreticisi (Sonsuz Seviye)
 function generateRandomLevel(levelIndex) {
   const size = Math.min(6 + (levelIndex * 2), 12); 
   let map = Array(size).fill(0).map(() => Array(size).fill(0));
 
-  map[size-1][size-1] = 9; // Çıkış Garajı (Sağ Alt)
+  map[size-1][size-1] = 9; // Garaj
+  map[size-1][0] = 8;      // Motor 
+  map[size-2][0] = 4;      // Kapı
+  map[size-1][1] = 4;      // Kapı
   
-  // Motoru koruyan kapalı alan (Sol Alt)
-  map[size-1][0] = 8;      
-  map[size-2][0] = 4;      
-  map[size-1][1] = 4;      
-  
-  // Buton (Üst orta)
+  // Buton
   map[0][Math.floor(size/2)] = 3; 
 
   // Engeller
@@ -57,9 +53,9 @@ io.on('connection', (socket) => {
   if (!rooms[roomId]) {
     rooms[roomId] = {
       players: [], levelIndex: 0, lives: 3, 
-      gateOpen: false, driverId: null, together: false, map: [], gridSize: 6
+      gateOpen: false, driverId: null, together: false, map: [], gridSize: 6,
+      gameState: 'LOBBY' // YENİ: Lobi Durumu
     };
-    loadLevel(roomId);
   }
 
   const room = rooms[roomId];
@@ -74,21 +70,21 @@ io.on('connection', (socket) => {
     if (room.players.length === 2) sendGameState(roomId);
   }
 
-  socket.on('skipTutorial', () => {
-    if (room.levelIndex === 0) {
-      room.levelIndex = 1;
+  // YENİ: Oyunu Başlatma Tetikleyicisi
+  socket.on('startGame', (startingLevel) => {
+    if (room.gameState === 'LOBBY') {
+      room.levelIndex = startingLevel;
+      room.gameState = 'PLAYING';
       loadLevel(roomId);
-      io.to(roomId).emit('msg', '⏩ Eğitim Atlandı! Gerçek görev başlıyor.');
+      io.to(roomId).emit('msg', startingLevel === 0 ? '🎓 Eğitim Modu Başladı!' : '🚀 Gerçek Görev Başladı!');
       sendGameState(roomId);
     }
   });
 
   socket.on('move', (dir) => {
-    if (room.players.length < 2) return;
+    if (room.players.length < 2 || room.gameState !== 'PLAYING') return;
     const player = room.players.find(p => p.id === socket.id);
-    if (!player) return;
-
-    if (room.together && room.driverId !== player.id) return;
+    if (!player || (room.together && room.driverId !== player.id)) return;
 
     let newX = player.x, newY = player.y;
     if (dir === 'UP') newY--;
@@ -103,7 +99,6 @@ io.on('connection', (socket) => {
     
     let hitWall = false;
 
-    // Kenar Çarpışma Fizikleri
     if (player.role === 'player1') {
       if (dir === 'DOWN' && currentCell === 2) hitWall = true; 
       if (dir === 'UP' && cellTarget === 2) hitWall = true;    
@@ -131,6 +126,7 @@ io.on('connection', (socket) => {
     if (cellTarget === 8 && !room.driverId) { 
       room.driverId = player.id;
       room.map[newY][newX] = 0; 
+      io.to(roomId).emit('playSound', 'motorCalisti');
       io.to(roomId).emit('msg', '🏍️ Biri motora bindi! Arkadaşını al.');
     }
 
@@ -184,10 +180,10 @@ function loadLevel(roomId) {
 
 function restartRoom(roomId, fullReset = false) {
   const room = rooms[roomId];
-  if(fullReset) room.levelIndex = 0;
+  if(fullReset) room.gameState = 'LOBBY';
   room.lives = 3;
-  loadLevel(roomId);
-  io.to(roomId).emit('msg', '💥 Can Bitti! Aynı seviye baştan başlıyor.');
+  if(room.gameState === 'PLAYING') loadLevel(roomId);
+  io.to(roomId).emit('msg', '💥 Can Bitti! Baştan başlıyor.');
   sendGameState(roomId);
 }
 
@@ -195,7 +191,11 @@ function sendGameState(roomId) {
   const room = rooms[roomId];
   room.players.forEach(p => {
     const filteredMap = room.map.map(row => row.map(cell => {
-      if (cell === 8 || cell === 9 || cell === 3 || cell === 4) return cell;
+      if (cell === 8 || cell === 9 || cell === 4) return cell;
+      
+      // YENİ: Sadece Kırmızı (Player2) Butonu Görür
+      if (cell === 3) return p.role === 'player2' ? 3 : 0; 
+      
       if (p.role === 'player1' && cell === 1) return 1; 
       if (p.role === 'player2' && cell === 2) return 2; 
       return 0;
@@ -204,7 +204,8 @@ function sendGameState(roomId) {
       map: filteredMap, players: room.players, 
       lives: room.lives, level: room.levelIndex,
       driverId: room.driverId, together: room.together,
-      gridSize: room.gridSize, gateOpen: room.gateOpen
+      gridSize: room.gridSize, gateOpen: room.gateOpen,
+      gameState: room.gameState // Lobi durumunu cliente yolla
     });
   });
 }

@@ -8,8 +8,30 @@
   <script src="/socket.io/socket.io.js"></script>
   <style> body { touch-action: manipulation; } </style>
 </head>
-<body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2">
+<body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2 relative">
 
+  <!-- YENİ: LOBİ VE KURALLAR EKRANI -->
+  <div id="lobbyScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center">
+    <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">NIGHT RIDERS</h1>
+    <p class="text-slate-400 mb-6 text-sm" id="lobbyStatus">Arkadaşın bekleniyor...</p>
+    
+    <div class="bg-slate-900 p-5 rounded-xl border border-slate-700 text-left w-full max-w-sm mb-6 shadow-2xl">
+      <h2 class="text-lg font-bold text-white mb-3 border-b border-slate-700 pb-2">Kurallar</h2>
+      <ul class="text-sm text-slate-300 space-y-3">
+        <li>🔵 <strong class="text-blue-400">Mavi Kask:</strong> Sadece mavi duvarları görür. Kalkan butonunu göremez.</li>
+        <li>🔴 <strong class="text-red-400">Kırmızı Kask:</strong> Sadece kırmızı duvarları ve gizli butonu görür.</li>
+        <li>🤝 Birbirinize rehberlik edin, kırmızı kask butonu bulup garajı açsın!</li>
+        <li>🏍️ İlk ulaşan motoru sürer, diğerini arkasına alıp garaja (🅿️) gider.</li>
+      </ul>
+    </div>
+    
+    <div class="flex gap-3 w-full max-w-sm hidden" id="lobbyButtons">
+      <button onclick="startGame(0)" class="flex-1 bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold text-white shadow-lg text-sm">🎓 Eğitim</button>
+      <button onclick="startGame(1)" class="flex-1 bg-red-600 hover:bg-red-500 py-3 rounded-xl font-bold text-white shadow-lg text-sm">🚀 Direkt Başla</button>
+    </div>
+  </div>
+
+  <!-- OYUN ARAYÜZÜ -->
   <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-sm relative">
     <div>
       <span class="text-slate-400 block text-xs">ROLÜN</span>
@@ -17,13 +39,12 @@
     </div>
     <div class="text-center">
       <span class="text-slate-400 block text-xs">SEVİYE</span>
-      <span id="levelText" class="font-bold text-emerald-400">0 (Eğitim)</span>
+      <span id="levelText" class="font-bold text-emerald-400">-</span>
     </div>
     <div class="text-right">
       <span class="text-slate-400 block text-xs">CAN</span>
       <span id="livesText" class="font-bold text-red-500">❤️ ❤️ ❤️</span>
     </div>
-    <button id="skipBtn" onclick="skipTutorial()" class="absolute -bottom-8 right-0 bg-slate-700 hover:bg-slate-600 text-xs px-3 py-1 rounded-full shadow hidden">⏩ Eğitimi Atla</button>
   </div>
 
   <div id="sysMsg" class="h-6 text-yellow-300 font-bold mb-4 animate-pulse text-sm text-center">Eşleşme bekleniyor...</div>
@@ -58,10 +79,13 @@
     const imgKapiKapali = new Image(); imgKapiKapali.src = '/assets/kapalı-garaj.png';
     const imgKapiAcik = new Image(); imgKapiAcik.src = '/assets/açık-garaj.png';
 
+    // Opsiyonel: Ses efekti için. Eğer klasöre mp3 eklersen çalışır.
+    // const audioMotor = new Audio('/assets/motor-sesi.mp3');
+
     let myRole = null, myId = null;
     let currentMap = [], players = [];
     let driverId = null, together = false, gateOpen = true;
-    let gridSize = 6; 
+    let gridSize = 6, currentGameState = 'LOBBY'; 
 
     socket.on('roleAssigned', ({ role, lives }) => {
       myRole = role; myId = socket.id;
@@ -73,15 +97,27 @@
       currentMap = data.map; players = data.players;
       driverId = data.driverId; together = data.together;
       gridSize = data.gridSize; gateOpen = data.gateOpen;
+      currentGameState = data.gameState;
       
-      document.getElementById('levelText').innerText = data.level === 0 ? "0 (Eğitim)" : data.level;
+      // Lobi Yönetimi
+      const lobby = document.getElementById('lobbyScreen');
+      const lobbyBtns = document.getElementById('lobbyButtons');
+      const status = document.getElementById('lobbyStatus');
       
-      const skipBtn = document.getElementById('skipBtn');
-      if (data.level === 0) skipBtn.classList.remove('hidden');
-      else skipBtn.classList.add('hidden');
+      if (currentGameState === 'LOBBY') {
+        lobby.classList.remove('hidden');
+        if (players.length === 2) {
+          status.innerText = "İki oyuncu da hazır!";
+          status.classList.replace('text-slate-400', 'text-emerald-400');
+          lobbyBtns.classList.remove('hidden');
+        }
+      } else {
+        lobby.classList.add('hidden');
+      }
 
+      document.getElementById('levelText').innerText = data.level === 0 ? "Eğitim" : data.level;
       updateLives(data.lives);
-      render();
+      if(currentGameState === 'PLAYING') render();
     });
 
     socket.on('wallHit', ({ lives }) => {
@@ -92,11 +128,16 @@
 
     socket.on('msg', (text) => { document.getElementById('sysMsg').innerText = text; });
     socket.on('receiveCommand', (cmd) => { document.getElementById('sysMsg').innerText = `Telsiz: ${cmd}`; });
+    
+    // Ses tetikleyici
+    socket.on('playSound', (type) => {
+      // if (type === 'motorCalisti') { audioMotor.currentTime = 0; audioMotor.play().catch(e=>e); }
+    });
 
     function updateLives(l) { document.getElementById('livesText').innerText = '❤️ '.repeat(l); }
     function sendMove(dir) { socket.emit('move', dir); }
     function sendCmd(cmd) { socket.emit('quickCommand', cmd); document.getElementById('sysMsg').innerText = `Sen: ${cmd}`; }
-    function skipTutorial() { socket.emit('skipTutorial'); }
+    function startGame(level) { socket.emit('startGame', level); } // Butondan tetiklenir
 
     window.addEventListener('keydown', (e) => {
       const dirMap = { ArrowUp: 'UP', KeyW: 'UP', ArrowDown: 'DOWN', KeyS: 'DOWN', ArrowLeft: 'LEFT', KeyA: 'LEFT', ArrowRight: 'RIGHT', KeyD: 'RIGHT' };
