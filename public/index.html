@@ -281,11 +281,13 @@
           const val = currentMap[r][c];
           if (val === 1 || val === 2) { 
             ctx.fillStyle = '#f97316'; 
-            // DUVARLARI HÜCRENİN ORTASINA KALIN BİR BLOK OLARAK ÇİZİYORUZ
-            if (val === 1) { // DİKEY DUVAR ORTADA
-              ctx.fillRect(c * tileSize + (tileSize / 2) - 6, r * tileSize, 12, tileSize);
-            } else {         // YATAY DUVAR ORTADA
-              ctx.fillRect(c * tileSize, r * tileSize + (tileSize / 2) - 6, tileSize, 12);
+            // DUVARLARI HÜCRENİN KENARINA (SINIR ÇİZGİSİ GİBİ) ÇİZİYORUZ
+            if (val === 1) { 
+              // DİKEY DUVAR - Hücrenin SAĞ kenarında
+              ctx.fillRect(c * tileSize + tileSize - 8, r * tileSize, 8, tileSize);
+            } else {         
+              // YATAY DUVAR - Hücrenin ALT kenarında
+              ctx.fillRect(c * tileSize, r * tileSize + tileSize - 8, tileSize, 8);
             }
           } else if (val === 3) { 
             ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
