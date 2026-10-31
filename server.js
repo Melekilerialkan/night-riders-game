@@ -11,31 +11,41 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let rooms = {};
 
-const TUTORIAL_STEPS = [
-  {
-    instruction: "EĞİTİM: Görmeyen oyuncu butona basıp kapıyı açmalı. Sonra birlikte garaja sürün!",
-    gridSize: 4,
-    map: [
-      [0, 0, 0, 3], 
-      [0, 1, 0, 0], 
-      [0, 0, 2, 0], 
-      [8, 0, 0, 9]  
-    ]
-  }
-];
+const TUTORIAL_STEP = {
+  gridSize: 4,
+  map: [
+    [0, 0, 0, 3], 
+    [0, 1, 0, 0], 
+    [0, 0, 2, 0], 
+    [8, 0, 0, 9]  
+  ]
+};
 
 function generateLevel(levelIndex) {
-  const size = Math.min(4 + levelIndex, 10);
+  const size = Math.min(4 + Math.floor(levelIndex / 2), 10);
   let map = Array(size).fill(0).map(() => Array(size).fill(0));
 
-  map[size-1][size-1] = 9; 
-  map[size-1][0] = 8;      
-  map[0][Math.floor(size/2)] = 3; 
+  // Garaj ve motorun konumları her bölümde rastgele/farklı yerlerde olsun (Köşeler hariç veya rastgele boşluklar)
+  let garageX = Math.floor(Math.random() * (size - 2)) + 1;
+  let garageY = Math.floor(Math.random() * (size - 2)) + 1;
+  let motorX = Math.floor(Math.random() * (size - 2)) + 1;
+  let motorY = Math.floor(Math.random() * (size - 2)) + 1;
+  let buttonX = Math.floor(Math.random() * size);
+  let buttonY = Math.floor(Math.random() * size);
 
-  for (let r = 1; r < size - 1; r++) {
-    for (let c = 1; c < size - 1; c++) {
-      if (Math.random() < 0.20) {
-        map[r][c] = Math.random() > 0.5 ? 1 : 2; 
+  while (garageX === motorX && garageY === motorY) {
+    motorX = Math.floor(Math.random() * (size - 2)) + 1;
+  }
+
+  map[garageY][garageX] = 9; // Garaj
+  map[motorY][motorX] = 8;   // Motor
+  map[buttonY][buttonX] = 3; // Buton
+
+  // Turuncu Duvarlar
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (map[r][c] === 0 && Math.random() < 0.20) {
+        map[r][c] = Math.random() > 0.5 ? 1 : 2; // 1: Dikey, 2: Yatay
       }
     }
   }
@@ -51,7 +61,7 @@ io.on('connection', (socket) => {
     if (!rooms[currentRoomId]) {
       rooms[currentRoomId] = {
         players: [], levelIndex: 0, motorLives: 3, 
-        gameMode: 'classic', timeLeft: 60, timerInterval: null,
+        gameMode: 'classic', timeLeft: 60, movesLeft: 30, timerInterval: null,
         gateOpen: false, driverId: null, together: false, map: [], gridSize: 4,
         gameState: 'LOBBY', buttonVisibleTo: 'player1'
       };
@@ -86,20 +96,23 @@ io.on('connection', (socket) => {
       room.players.forEach(p => p.lives = 3);
       loadLevel(currentRoomId);
 
+      if (room.timerInterval) clearInterval(room.timerInterval);
+
       if (room.gameMode === 'timed') {
-        room.timeLeft = 60;
-        if (room.timerInterval) clearInterval(room.timerInterval);
+        room.timeLeft = 60 + (room.levelIndex * 15); // Bölüme göre süre
         room.timerInterval = setInterval(() => {
           room.timeLeft--;
           io.to(currentRoomId).emit('timerUpdate', room.timeLeft);
           if (room.timeLeft <= 0) {
             clearInterval(room.timerInterval);
-            room.gameState = 'GAMEOVER';
-            io.to(currentRoomId).emit('msg', '⏰ Süre bitti! Polisler yakaladı.');
-            sendGameState(currentRoomId);
+            // SÜRE BİTİNCE BAŞTAN BAŞLAMAZ, SADECE BU BÖLÜMÜ YENİDEN YÜKLER (RETRY LEVEL)
+            restartLevel(currentRoomId, '⏰ Süre bitti! Bölüm yeniden başlatılıyor...');
           }
         }, 1000);
+      } else if (room.gameMode === 'moves') {
+        room.movesLeft = 40 + (room.levelIndex * 10);
       }
+
       sendGameState(currentRoomId);
     }
   });
@@ -112,6 +125,15 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.id === socket.id);
     if (!player) return;
     if (room.together && room.driverId !== player.id) return;
+
+    // Hareket hakkı modu kontrolü
+    if (room.gameMode === 'moves') {
+      room.movesLeft--;
+      if (room.movesLeft <= 0) {
+        restartLevel(currentRoomId, '👣 Hamle hakkı bitti! Bölüm yeniden başlatılıyor...');
+        return;
+      }
+    }
 
     let newX = player.x, newY = player.y;
     if (dir === 'UP') newY--;
@@ -127,12 +149,10 @@ io.on('connection', (socket) => {
     let hitWall = false;
 
     if (player.role === 'player1') {
-      if (currentCell === 1) hitWall = true;
-      if (cellTarget === 1) hitWall = true;
+      if (currentCell === 1 || cellTarget === 1) hitWall = true;
     }
     if (player.role === 'player2') { 
-      if (currentCell === 2) hitWall = true;
-      if (cellTarget === 2) hitWall = true;
+      if (currentCell === 2 || cellTarget === 2) hitWall = true;
     }
 
     if (hitWall) {
@@ -140,36 +160,35 @@ io.on('connection', (socket) => {
         room.motorLives--;
         io.to(currentRoomId).emit('motorHit', {});
 
-        const emptySpots = [];
-        for(let r=0; r<room.gridSize; r++){
-          for(let c=0; c<room.gridSize; c++){
-            if(room.map[r][c] === 0) emptySpots.push({x: c, y: r});
-          }
-        }
-        if(emptySpots.length > 0) {
-          const p1 = room.players[0];
-          const p2 = room.players[1];
-          const spot1 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
-          p1.x = spot1.x; p1.y = spot1.y;
-          if (emptySpots.length > 1) {
-            let spot2 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
-            p2.x = spot2.x; p2.y = spot2.y;
-          }
-        }
-        room.together = false;
-
         if (room.motorLives <= 0) {
-          if (room.timerInterval) clearInterval(room.timerInterval);
-          room.gameState = 'GAMEOVER';
-          io.to(currentRoomId).emit('msg', '💥 Motor hurdaya çıktı! Oyun bitti.');
+          // MOTOR CANI BİTİNCE TÜM OYUNU DEĞİL, KALDIĞI BÖLÜMÜ BAŞA SARAR
+          restartLevel(currentRoomId, '💥 Motor hurdaya çıktı! Bölüm tekrarlanıyor...');
+          return;
+        } else {
+          // Rastgele savrulma
+          const emptySpots = [];
+          for(let r=0; r<room.gridSize; r++){
+            for(let c=0; c<room.gridSize; c++){
+              if(room.map[r][c] === 0) emptySpots.push({x: c, y: r});
+            }
+          }
+          if(emptySpots.length > 0) {
+            const p1 = room.players[0];
+            const p2 = room.players[1];
+            const spot1 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+            p1.x = spot1.x; p1.y = spot1.y;
+            if (emptySpots.length > 1) {
+              let spot2 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+              p2.x = spot2.x; p2.y = spot2.y;
+            }
+          }
+          room.together = false;
         }
       } else {
         player.lives--;
-        io.to(currentRoomId).emit('msg', `${player.name} duvara çarptı! Can: ${player.lives}`);
         if (player.lives <= 0) {
-          if (room.timerInterval) clearInterval(room.timerInterval);
-          room.gameState = 'GAMEOVER';
-          io.to(currentRoomId).emit('msg', `💥 ${player.name}'in canı bitti! Oyun bitti.`);
+          restartLevel(currentRoomId, `💥 ${player.name}'in canı bitti! Bölüm tekrarlanıyor...`);
+          return;
         }
       }
       sendGameState(currentRoomId);
@@ -217,16 +236,9 @@ io.on('connection', (socket) => {
     }
 
     if (cellTarget === 9 && room.together) { 
-      if (room.levelIndex === 0) {
-        // EĞİTİM BİTTİĞİNDE POP-UP ÇIKMADAN DİREKT LOBİYE DÖNER
-        room.gameState = 'LOBBY';
-        if (room.timerInterval) clearInterval(room.timerInterval);
-        io.to(currentRoomId).emit('msg', '🎉 Eğitim Tamamlandı! Lobiye dönüldü.');
-      } else {
-        room.levelIndex++;
-        io.to(currentRoomId).emit('msg', `🎉 Seviye ${room.levelIndex} Başlıyor!`);
-        loadLevel(currentRoomId);
-      }
+      room.levelIndex++;
+      io.to(currentRoomId).emit('msg', `🎉 Seviye ${room.levelIndex} Başlıyor!`);
+      loadLevel(currentRoomId);
     }
 
     sendGameState(currentRoomId);
@@ -241,13 +253,7 @@ io.on('connection', (socket) => {
 
   socket.on('restartGame', () => {
     if (!currentRoomId || !rooms[currentRoomId]) return;
-    const room = rooms[currentRoomId];
-    room.gameState = 'LOBBY';
-    room.levelIndex = 0;
-    room.motorLives = 3;
-    room.players.forEach(p => p.lives = 3);
-    if (room.timerInterval) clearInterval(room.timerInterval);
-    sendGameState(currentRoomId);
+    restartLevel(currentRoomId, '🔄 Bölüm yeniden başlatıldı.');
   });
 
   socket.on('disconnect', () => {
@@ -266,7 +272,7 @@ io.on('connection', (socket) => {
 
 function loadLevel(roomId) {
   const room = rooms[roomId];
-  const levelData = room.levelIndex === 0 ? TUTORIAL_STEPS[0] : generateLevel(room.levelIndex);
+  const levelData = room.levelIndex === 0 ? TUTORIAL_STEP : generateLevel(room.levelIndex);
   
   room.map = JSON.parse(JSON.stringify(levelData.map));
   room.gridSize = levelData.gridSize;
@@ -275,9 +281,24 @@ function loadLevel(roomId) {
   room.driverId = null;
   room.together = false;
   room.motorLives = 3;
+  room.players.forEach(p => p.lives = 3);
+
+  if (room.gameMode === 'timed') {
+    room.timeLeft = 60 + (room.levelIndex * 15);
+  } else if (room.gameMode === 'moves') {
+    room.movesLeft = 40 + (room.levelIndex * 10);
+  }
 
   if(room.players[0]) { room.players[0].x = 0; room.players[0].y = 0; }
   if(room.players[1]) { room.players[1].x = room.gridSize - 1; room.players[1].y = 0; }
+}
+
+function restartLevel(roomId, msg) {
+  const room = rooms[roomId];
+  loadLevel(roomId);
+  room.gameState = 'PLAYING';
+  io.to(roomId).emit('msg', msg);
+  sendGameState(roomId);
 }
 
 function sendGameState(roomId) {
@@ -295,7 +316,9 @@ function sendGameState(roomId) {
       motorLives: room.motorLives, level: room.levelIndex,
       driverId: room.driverId, together: room.together,
       gridSize: room.gridSize, gateOpen: room.gateOpen,
-      gameState: room.gameState, gameMode: room.gameMode, timeLeft: room.timeLeft
+      gameState: room.gameState, gameMode: room.gameMode, 
+      timeLeft: room.timeLeft, movesLeft: room.movesLeft,
+      fogEnabled: room.levelIndex >= 3 // Seviye 3'ten sonra sisli ortam aktif!
     });
   });
 }
