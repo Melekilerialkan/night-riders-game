@@ -46,9 +46,9 @@
         <button onclick="setMode('timed')" id="btnTimed" class="flex-1 bg-slate-800 text-slate-300 py-2 rounded-lg font-bold text-xs">Zamana Karşı</button>
       </div>
       <ul class="text-xs text-slate-300 space-y-2">
-        <li>🗺️ Harita 3x3'ten başlayarak her bölümde büyür.</li>
-        <li>🚶 Yalnızken çarparsan sadece kendi canın gider (savrulmazsın).</li>
-        <li>🏍️ Motordayken çarparsanız ortak motor canı gider ve savrulursunuz!</li>
+        <li>🗺️ <b>Eğitim 4x4 ile başlar</b>, sonra her bölümde büyür.</li>
+        <li>🧱 Kırmızı yatay duvarlara, Mavi dikey duvarlara çarpar.</li>
+        <li>🔒 Önce butona basıp kapı açılmalı, yoksa motora binilemez!</li>
       </ul>
     </div>
     
@@ -73,10 +73,10 @@
     </div>
   </div>
 
-  <!-- OYUN ÜST BARI (ÇİFT CAN GÖSTERGESİ) -->
+  <!-- OYUN ÜST BARI -->
   <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-xs relative">
     <div>
-      <span class="text-slate-400 block">BİZİM CAN</span>
+      <span class="text-slate-400 block">CANIM</span>
       <span id="playerLives" class="font-bold text-blue-400">❤️❤️❤️</span>
     </div>
     <div class="text-center">
@@ -96,7 +96,7 @@
     <canvas id="gameCanvas" width="400" height="400" class="border-2 border-slate-800 rounded-xl bg-zinc-700 shadow-2xl"></canvas>
   </div>
     
-  <!-- TELSİZ DÜĞMELERİ VE ÖZEL YAZI GÖNDERME -->
+  <!-- TELSİZ -->
   <div class="w-full max-w-[400px] mt-4 space-y-2">
     <div class="grid grid-cols-4 gap-1">
       <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 active:bg-red-500 py-2 rounded-lg font-bold text-xs shadow">🛑 DUR</button>
@@ -104,7 +104,6 @@
       <button onclick="sendCmd('🏍️ GEL!')" class="bg-emerald-600 active:bg-emerald-500 py-2 rounded-lg font-bold text-xs shadow">🏍️ GEL</button>
       <button onclick="sendCmd('👍 TEMİZ!')" class="bg-blue-600 active:bg-blue-500 py-2 rounded-lg font-bold text-xs shadow">👍 TEMİZ</button>
     </div>
-    <!-- ÖZEL TELSİZ MESAJI YAZMA KUTUSU -->
     <div class="flex gap-2">
       <input type="text" id="customMsgInput" placeholder="Özel telsiz mesajı yaz..." class="flex-1 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-yellow-400">
       <button onclick="sendCustomCmd()" class="bg-yellow-500 hover:bg-yellow-400 text-slate-950 px-4 py-2 rounded-lg font-bold text-xs shadow">Gönder</button>
@@ -139,8 +138,8 @@
 
     let myRole = null, selectedMode = 'classic';
     let currentMap = [], players = [];
-    let driverId = null, together = false, gateOpen = true;
-    let gridSize = 3, currentGameState = 'LOBBY'; 
+    let driverId = null, together = false, gateOpen = false;
+    let gridSize = 4, currentGameState = 'LOBBY'; 
 
     function joinGame() {
       const name = document.getElementById('playerNameInput').value.trim();
@@ -200,7 +199,7 @@
         gameOverScreen.classList.add('hidden');
       }
 
-      let infoText = data.level === 0 ? "Eğitim" : `Seviye ${data.level} (${gridSize}x${gridSize})`;
+      let infoText = data.level === 0 ? "Eğitim (4x4)" : `Seviye ${data.level} (${gridSize}x${gridSize})`;
       if (data.gameMode === 'timed') infoText += ` - ${data.timeLeft}sn`;
       document.getElementById('levelText').innerText = infoText;
       
@@ -214,7 +213,7 @@
       if(currentGameState === 'PLAYING') render();
     });
 
-    socket.on('motorHit', ({ motorLives }) => {
+    socket.on('motorHit', () => {
       canvas.classList.add('border-red-500');
       setTimeout(() => canvas.classList.remove('border-red-500'), 300);
     });
