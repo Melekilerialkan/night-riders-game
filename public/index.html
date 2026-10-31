@@ -6,7 +6,21 @@
   <title>Night Riders - Gece Sürüşü</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <style> body { touch-action: manipulation; } </style>
+  <style>
+    body { touch-action: manipulation; }
+    /* Mobil uyumluluk için Canvas'ı kapsayıcı div'e uydur */
+    #canvas-container {
+      width: 100%;
+      max-width: 400px;
+      aspect-ratio: 1 / 1;
+      position: relative;
+    }
+    #gameCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
 </head>
 <body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2 relative">
 
@@ -45,13 +59,14 @@
     </div>
   </div>
 
-  <!-- BİLDİRİM BARI DAHA DİKKAT ÇEKİCİ YAPILDI -->
   <div id="sysMsg" class="h-auto min-h-[24px] text-yellow-300 font-bold mb-4 text-sm text-center px-2">Eşleşme bekleniyor...</div>
 
-  <!-- YENİ: ARKA PLAN FÜME RENGİ (bg-zinc-700) -->
-  <canvas id="gameCanvas" width="360" height="360" class="border-2 border-slate-800 rounded-xl bg-zinc-700 shadow-2xl w-full max-w-[360px]"></canvas>
+  <!-- MOBİL UYUMLU CANVAS CONTAINER -->
+  <div id="canvas-container">
+    <canvas id="gameCanvas" width="400" height="400" class="border-2 border-slate-800 rounded-xl bg-zinc-700 shadow-2xl"></canvas>
+  </div>
     
-  <div class="w-full max-w-[360px] grid grid-cols-4 gap-1 mt-4">
+  <div class="w-full max-w-[400px] grid grid-cols-4 gap-1 mt-4">
     <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 active:bg-red-500 py-3 rounded-lg font-bold text-xs shadow">🛑 DUR</button>
     <button onclick="sendCmd('⚠️ TUZAK')" class="bg-orange-600 active:bg-orange-500 py-3 rounded-lg font-bold text-xs shadow">⚠️ TUZAK</button>
     <button onclick="sendCmd('🏍️ GEL')" class="bg-emerald-600 active:bg-emerald-500 py-3 rounded-lg font-bold text-xs shadow">🏍️ GEL</button>
@@ -129,8 +144,8 @@
     socket.on('msg', (text) => { 
       const msgBox = document.getElementById('sysMsg');
       msgBox.innerText = text; 
-      msgBox.classList.remove('animate-pulse'); // Mesaj geldiğinde animasyonu sıfırla
-      void msgBox.offsetWidth; // DOM Reflow tetiklemesi
+      msgBox.classList.remove('animate-pulse'); 
+      void msgBox.offsetWidth; 
       msgBox.classList.add('animate-pulse');
     });
 
@@ -163,16 +178,15 @@
     }
 
     function render() {
+      // Dinamik boyutlandırma için Canvas boyutlarını güncelle
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
       const tileSize = canvas.width / gridSize;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // YENİ: Görselleri kocaman yapmak için boşluğu (padding) azalttık
-      const pad = 2;
-      const imgSize = tileSize - (pad * 2); 
-
       for (let r = 0; r < gridSize; r++) {
         for (let c = 0; c < gridSize; c++) {
-          ctx.strokeStyle = '#27272a'; // Duvarlar belli olsun diye zemin grid rengini hafif koyulaştırdık
+          ctx.strokeStyle = '#27272a';
           ctx.strokeRect(c * tileSize, r * tileSize, tileSize, tileSize);
 
           const val = currentMap[r][c];
@@ -184,9 +198,9 @@
             ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
             ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 12, 0, Math.PI*2); ctx.fill();
           } else if (val === 8) { 
-            drawImageWithFallback(imgMotor, '🏍️', c * tileSize + pad, r * tileSize + pad, imgSize, imgSize, 4, 30);
+            // MOTOR GÖRSELİ TAM HÜCRE BOYUTUNDA
+            drawImageWithFallback(imgMotor, '🏍️', c * tileSize, r * tileSize, tileSize, tileSize, 4, 30);
           } else if (val === 9) { 
-            // YENİ: Garaj kapısı P olmadan, bulunduğu kutuyu tamamen dolduracak şekilde çiziliyor
             if (!gateOpen) {
               drawImageWithFallback(imgKapiKapali, '🔒', c * tileSize, r * tileSize, tileSize, tileSize, 10, 32);
             } else {
@@ -203,21 +217,23 @@
         
         if (together) {
           if (isDriver) {
-            drawImageWithFallback(imgBeraberMotor, '🏍️', xPos + pad, yPos + pad, imgSize, imgSize, 4, 30);
+            // BERABER BİNİLDİĞİNDE ŞOFÖRÜN KONUMUNA ÇİZİLİR
+            drawImageWithFallback(imgBeraberMotor, '🏍️', xPos, yPos, tileSize, tileSize, 4, 30);
           }
-          return; 
+          return; // Yolcu ayrıca çizilmez
         }
 
         if (isDriver) {
           const activeMotorImg = p.role === 'player1' ? imgMaviMotor : imgKirmiziMotor;
-          drawImageWithFallback(activeMotorImg, '🏍️', xPos + pad, yPos + pad, imgSize, imgSize, 4, 30);
+          // ŞOFÖRLÜ MOTOR GÖRSELİ TAM HÜCRE BOYUTUNDA
+          drawImageWithFallback(activeMotorImg, '🏍️', xPos, yPos, tileSize, tileSize, 4, 30);
         } else {
           const helmetImg = p.role === 'player1' ? imgMaviKask : imgKirmiziKask;
-          // Arka plan takım renk ışığı
+          // Takım rengi yuvarlağı
           ctx.fillStyle = p.role === 'player1' ? '#3b82f644' : '#ef444444';
-          ctx.beginPath(); ctx.arc(xPos + tileSize/2, yPos + tileSize/2, 18, 0, Math.PI*2); ctx.fill();
-          // Kocaman kask çizimi
-          drawImageWithFallback(helmetImg, '🪖', xPos + pad, yPos + pad, imgSize, imgSize, 4, 30);
+          ctx.beginPath(); ctx.arc(xPos + tileSize/2, yPos + tileSize/2, tileSize/2, 0, Math.PI*2); ctx.fill();
+          // KASK GÖRSELİ TAM HÜCRE BOYUTUNDA
+          drawImageWithFallback(helmetImg, '🪖', xPos, yPos, tileSize, tileSize, 4, 30);
         }
       });
     }
