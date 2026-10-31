@@ -11,16 +11,15 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let rooms = {};
 
-// 4x4 Rehberli Eğitim Adımları
 const TUTORIAL_STEPS = [
   {
-    instruction: "BÖLÜM 1: Arkadaşın gizli butonu görüyor. Ona telsizden 'GEL' de ve yönlendir!",
+    instruction: "EĞİTİM: Görmeyen oyuncu butona basıp kapıyı açmalı. Sonra birlikte garaja sürün!",
     gridSize: 4,
     map: [
-      [0, 0, 0, 3],
-      [0, 1, 0, 0],
-      [0, 0, 2, 0],
-      [8, 0, 0, 9]
+      [0, 0, 0, 3], 
+      [0, 1, 0, 0], 
+      [0, 0, 2, 0], 
+      [8, 0, 0, 9]  
     ]
   }
 ];
@@ -54,7 +53,7 @@ io.on('connection', (socket) => {
         players: [], levelIndex: 0, motorLives: 3, 
         gameMode: 'classic', timeLeft: 60, timerInterval: null,
         gateOpen: false, driverId: null, together: false, map: [], gridSize: 4,
-        gameState: 'LOBBY', buttonVisibleTo: 'player1', currentTutorialStep: 0
+        gameState: 'LOBBY', buttonVisibleTo: 'player1'
       };
     }
 
@@ -128,20 +127,15 @@ io.on('connection', (socket) => {
     let hitWall = false;
 
     if (player.role === 'player1') {
-      if (dir === 'DOWN' && currentCell === 1) hitWall = true; 
-      if (dir === 'UP' && cellTarget === 1) hitWall = true;    
-      if (dir === 'RIGHT' && currentCell === 1) hitWall = true;
-      if (dir === 'LEFT' && currentCell === 1) hitWall = true;
+      if (currentCell === 1) hitWall = true;
+      if (cellTarget === 1) hitWall = true;
     }
     if (player.role === 'player2') { 
-      if (dir === 'RIGHT' && currentCell === 2) hitWall = true; 
-      if (dir === 'LEFT' && cellTarget === 2) hitWall = true;   
-      if (dir === 'UP' && cellTarget === 2) hitWall = true;
-      if (dir === 'DOWN' && cellTarget === 2) hitWall = true;
+      if (currentCell === 2) hitWall = true;
+      if (cellTarget === 2) hitWall = true;
     }
 
     if (hitWall) {
-      // MOTOR KULLANIRKEN (YALNIZ BİNİCİ VEYA BERABERKEN) ÇARPARSAK SAVRULURUZ
       if (room.driverId) {
         room.motorLives--;
         io.to(currentRoomId).emit('motorHit', {});
@@ -170,7 +164,6 @@ io.on('connection', (socket) => {
           io.to(currentRoomId).emit('msg', '💥 Motor hurdaya çıktı! Oyun bitti.');
         }
       } else {
-        // Henüz motora binmediyse sadece kendi canı gider, savrulmaz
         player.lives--;
         io.to(currentRoomId).emit('msg', `${player.name} duvara çarptı! Can: ${player.lives}`);
         if (player.lives <= 0) {
@@ -198,10 +191,9 @@ io.on('connection', (socket) => {
     if (cellTarget === 3 && !room.gateOpen) { 
       if (player.role !== room.buttonVisibleTo) {
         room.gateOpen = true;
-        io.to(currentRoomId).emit('tutorialPopup', { title: "KAPI AÇILDI!", desc: "Şimdi motora binip garaja sürün." });
-        io.to(currentRoomId).emit('msg', '🔓 GARAJ AÇILDI! Şimdi motora binebilirsiniz.');
+        io.to(currentRoomId).emit('msg', '🔓 GARAJ KAPISI AÇILDI!');
       } else {
-        io.to(currentRoomId).emit('msg', '❌ Sen bu butonu görüyorsun, basamazsın! Görmeyen arkadaşını yönlendir.');
+        io.to(currentRoomId).emit('msg', '❌ Bu butonu sen görüyorsun, basamazsın!');
       }
     }
 
@@ -213,25 +205,23 @@ io.on('connection', (socket) => {
       room.driverId = player.id;
       room.map[newY][newX] = 0; 
       io.to(currentRoomId).emit('playSound', 'motorCalisti');
-      io.to(currentRoomId).emit('tutorialPopup', { title: "MOTORA BİNDİN!", desc: "Şimdi diğer oyuncuyu arkaya al ve çıkışa sür!" });
-      io.to(currentRoomId).emit('msg', '🏍️ Motora binildi! Şimdi arkadaşını arkaya al.');
+      io.to(currentRoomId).emit('msg', '🏍️ Motora binildi!');
     }
 
     if (room.driverId === player.id && !room.together) { 
       const otherPlayer = room.players.find(p => p.id !== room.driverId);
       if (player.x === otherPlayer.x && player.y === otherPlayer.y) {
         room.together = true;
-        io.to(currentRoomId).emit('tutorialPopup', { title: "BİRLEŞTİNİZ!", desc: "Sağ alttaki garaja doğru sürün!" });
-        io.to(currentRoomId).emit('msg', '✅ Arkadaşın arkada! Çıkış garajına sür!');
+        io.to(currentRoomId).emit('msg', '✅ Arkadaşın arkada! Çıkışa sürün.');
       }
     }
 
     if (cellTarget === 9 && room.together) { 
       if (room.levelIndex === 0) {
+        // EĞİTİM BİTTİĞİNDE POP-UP ÇIKMADAN DİREKT LOBİYE DÖNER
         room.gameState = 'LOBBY';
         if (room.timerInterval) clearInterval(room.timerInterval);
-        io.to(currentRoomId).emit('tutorialPopup', { title: "EĞİTİM BİTTİ!", desc: "Lobiye dönülüyor. Oyunu başlatabilirsiniz!" });
-        io.to(currentRoomId).emit('msg', '🎉 Eğitim Başarıyla Tamamlandı! Lobiye dönülüyor...');
+        io.to(currentRoomId).emit('msg', '🎉 Eğitim Tamamlandı! Lobiye dönüldü.');
       } else {
         room.levelIndex++;
         io.to(currentRoomId).emit('msg', `🎉 Seviye ${room.levelIndex} Başlıyor!`);

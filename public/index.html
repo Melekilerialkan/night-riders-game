@@ -1,359 +1,304 @@
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Night Riders - Gece Sürüşü</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="/socket.io/socket.io.js"></script>
-  <style>
-    body { touch-action: manipulation; }
-    #canvas-container {
-      width: 100%;
-      max-width: 400px;
-      aspect-ratio: 1 / 1;
-      position: relative;
-    }
-    #gameCanvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-  </style>
-</head>
-<body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2 relative">
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
 
-  <!-- İSİM VE ODA KODU EKRANI -->
-  <div id="nameScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center">
-    <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">NIGHT RIDERS</h1>
-    <p class="text-slate-400 mb-6 text-sm">Gece Sürüşü İşbirliği Bulmacası</p>
-    <div class="bg-slate-900 p-5 rounded-xl border border-slate-700 w-full max-w-sm shadow-2xl space-y-3">
-      <input type="text" id="playerNameInput" placeholder="Adın (Örn: Melek)" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl text-white text-center font-bold focus:outline-none focus:border-yellow-400">
-      <input type="text" id="roomCodeInput" placeholder="Oda Kodu (Örn: 1234)" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl text-white text-center font-bold focus:outline-none focus:border-yellow-400">
-      <button onclick="joinGame()" class="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 py-3 rounded-xl font-bold shadow-lg">Odaya Gir</button>
-    </div>
-  </div>
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
 
-  <!-- LOBİ EKRANI -->
-  <div id="lobbyScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center hidden">
-    <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">LOBİ</h1>
-    <p class="text-slate-400 mb-6 text-sm" id="lobbyStatus">Arkadaşın bekleniyor...</p>
+app.use(express.static(path.join(__dirname, 'public')));
+
+let rooms = {};
+
+const TUTORIAL_STEPS = [
+  {
+    instruction: "EĞİTİM: Görmeyen oyuncu butona basıp kapıyı açmalı. Sonra birlikte garaja sürün!",
+    gridSize: 4,
+    map: [
+      [0, 0, 0, 3], 
+      [0, 1, 0, 0], 
+      [0, 0, 2, 0], 
+      [8, 0, 0, 9]  
+    ]
+  }
+];
+
+function generateLevel(levelIndex) {
+  const size = Math.min(4 + levelIndex, 10);
+  let map = Array(size).fill(0).map(() => Array(size).fill(0));
+
+  map[size-1][size-1] = 9; 
+  map[size-1][0] = 8;      
+  map[0][Math.floor(size/2)] = 3; 
+
+  for (let r = 1; r < size - 1; r++) {
+    for (let c = 1; c < size - 1; c++) {
+      if (Math.random() < 0.20) {
+        map[r][c] = Math.random() > 0.5 ? 1 : 2; 
+      }
+    }
+  }
+  return { gridSize: size, map };
+}
+
+io.on('connection', (socket) => {
+  let currentRoomId = null;
+
+  socket.on('joinRoom', ({ name, roomCode }) => {
+    currentRoomId = roomCode ? roomCode.trim() : "main-room";
     
-    <div class="bg-slate-900 p-5 rounded-xl border border-slate-700 text-left w-full max-w-sm mb-6 shadow-2xl">
-      <h2 class="text-lg font-bold text-white mb-3 border-b border-slate-700 pb-2">Oyun Modu Seç</h2>
-      <div class="flex gap-2 mb-4">
-        <button onclick="setMode('classic')" id="btnClassic" class="flex-1 bg-yellow-500 text-slate-950 py-2 rounded-lg font-bold text-xs">Serbest (Süresiz)</button>
-        <button onclick="setMode('timed')" id="btnTimed" class="flex-1 bg-slate-800 text-slate-300 py-2 rounded-lg font-bold text-xs">Zamana Karşı</button>
-      </div>
-      <ul class="text-xs text-slate-300 space-y-2">
-        <li>🗺️ <b>Eğitim 4x4 ile başlar</b> ve adımlarla öğretir.</li>
-        <li>🧱 Kırmızı yatay, Mavi dikey duvarları görür ve onlara çarpar.</li>
-        <li>🏍️ Motora bindiğinizden itibaren kazalarda savrulursunuz!</li>
-      </ul>
-    </div>
+    if (!rooms[currentRoomId]) {
+      rooms[currentRoomId] = {
+        players: [], levelIndex: 0, motorLives: 3, 
+        gameMode: 'classic', timeLeft: 60, timerInterval: null,
+        gateOpen: false, driverId: null, together: false, map: [], gridSize: 4,
+        gameState: 'LOBBY', buttonVisibleTo: 'player1'
+      };
+    }
+
+    const room = rooms[currentRoomId];
+
+    if (room.players.length >= 2) {
+      socket.emit('roomFull', 'Bu oda şu an dolu!');
+      return;
+    }
+
+    socket.join(currentRoomId);
+    const role = room.players.length === 0 ? 'player1' : 'player2';
+    const initPos = role === 'player1' ? { x: 0, y: 0 } : { x: room.gridSize - 1, y: 0 };
     
-    <div class="flex gap-3 w-full max-w-sm hidden" id="lobbyButtons">
-      <button onclick="startGame(0)" class="flex-1 bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold text-white shadow-lg text-sm">🎓 Eğitim</button>
-      <button onclick="startGame(1)" class="flex-1 bg-red-600 hover:bg-red-500 py-3 rounded-xl font-bold text-white shadow-lg text-sm">🚀 Direkt Başla</button>
-    </div>
-  </div>
+    room.players.push({ id: socket.id, name: name || 'Sürücü', role, x: initPos.x, y: initPos.y, lives: 3 });
+    socket.emit('roleAssigned', { role });
 
-  <!-- OYUN BİTTİ (TEKRAR DENE) EKRANI -->
-  <div id="gameOverScreen" class="absolute inset-0 bg-slate-950/90 z-50 flex flex-col items-center justify-center p-4 text-center hidden">
-    <h1 class="text-4xl font-extrabold text-red-500 mb-2">OYUN BİTTİ</h1>
-    <p class="text-slate-300 mb-6 text-sm" id="gameOverReason">Canlar tükendi veya süre bitti.</p>
-    <button onclick="requestRestart()" class="bg-yellow-500 hover:bg-yellow-400 text-slate-950 px-8 py-3 rounded-xl font-bold shadow-lg text-base">Tekrar Dene</button>
-  </div>
+    sendGameState(currentRoomId);
+  });
 
-  <!-- EĞİTİM / REHBER POP-UP BİLDİRİMİ -->
-  <div id="tutorialOverlay" class="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 hidden">
-    <div class="bg-slate-900 border-2 border-yellow-400 p-6 rounded-2xl text-center max-w-sm w-full shadow-2xl">
-      <span class="text-xs text-yellow-400 font-bold uppercase tracking-widest block mb-1">🎮 REHBER / EĞİTİM</span>
-      <h3 id="tutTitle" class="text-xl font-extrabold text-white mb-2">GÖREV</h3>
-      <p id="tutDesc" class="text-sm text-slate-300 mb-6">Açıklama buraya gelecek...</p>
-      <button onclick="closeTutorial()" class="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 py-3 rounded-xl font-bold shadow-lg">Anladım, Devam Et</button>
-    </div>
-  </div>
+  socket.on('startGame', ({ mode, startingLevel }) => {
+    if (!currentRoomId || !rooms[currentRoomId]) return;
+    const room = rooms[currentRoomId];
 
-  <!-- TELSİZ POP-UP BİLDİRİMİ -->
-  <div id="popupOverlay" class="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center hidden pointer-events-none">
-    <div class="bg-slate-900 border-2 border-yellow-400 px-8 py-6 rounded-2xl text-center shadow-2xl animate-bounce">
-      <span id="popupSender" class="text-xs text-yellow-400 block mb-1 uppercase tracking-widest font-bold">Telsiz Mesajı</span>
-      <h2 id="popupText" class="text-2xl font-extrabold text-white">DUR!</h2>
-    </div>
-  </div>
+    if (room.players.length === 2) {
+      room.gameMode = mode;
+      room.levelIndex = startingLevel;
+      room.gameState = 'PLAYING';
+      room.motorLives = 3;
+      room.players.forEach(p => p.lives = 3);
+      loadLevel(currentRoomId);
 
-  <!-- OYUN ÜST BARI -->
-  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-xs relative">
-    <div>
-      <span class="text-slate-400 block">CANIM</span>
-      <span id="playerLives" class="font-bold text-blue-400">❤️❤️❤️</span>
-    </div>
-    <div class="text-center">
-      <span class="text-slate-400 block">SEVİYE</span>
-      <span id="levelText" class="font-bold text-emerald-400">-</span>
-    </div>
-    <div class="text-right">
-      <span class="text-slate-400 block">MOTOR CANI</span>
-      <span id="motorLivesText" class="font-bold text-red-500">❤️❤️❤️</span>
-    </div>
-  </div>
+      if (room.gameMode === 'timed') {
+        room.timeLeft = 60;
+        if (room.timerInterval) clearInterval(room.timerInterval);
+        room.timerInterval = setInterval(() => {
+          room.timeLeft--;
+          io.to(currentRoomId).emit('timerUpdate', room.timeLeft);
+          if (room.timeLeft <= 0) {
+            clearInterval(room.timerInterval);
+            room.gameState = 'GAMEOVER';
+            io.to(currentRoomId).emit('msg', '⏰ Süre bitti! Polisler yakaladı.');
+            sendGameState(currentRoomId);
+          }
+        }, 1000);
+      }
+      sendGameState(currentRoomId);
+    }
+  });
 
-  <div id="sysMsg" class="h-auto min-h-[24px] text-yellow-300 font-bold mb-4 text-sm text-center px-2">Eşleşme bekleniyor...</div>
+  socket.on('move', (dir) => {
+    if (!currentRoomId || !rooms[currentRoomId]) return;
+    const room = rooms[currentRoomId];
+    if (room.players.length < 2 || room.gameState !== 'PLAYING') return;
 
-  <!-- CANVAS -->
-  <div id="canvas-container">
-    <canvas id="gameCanvas" width="400" height="400" class="border-2 border-slate-800 rounded-xl bg-zinc-700 shadow-2xl"></canvas>
-  </div>
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+    if (room.together && room.driverId !== player.id) return;
+
+    let newX = player.x, newY = player.y;
+    if (dir === 'UP') newY--;
+    if (dir === 'DOWN') newY++;
+    if (dir === 'LEFT') newX--;
+    if (dir === 'RIGHT') newX++;
+
+    if (newX < 0 || newX >= room.gridSize || newY < 0 || newY >= room.gridSize) return;
+
+    const currentCell = room.map[player.y][player.x];
+    const cellTarget = room.map[newY][newX];
     
-  <!-- TELSİZ -->
-  <div class="w-full max-w-[400px] mt-4 space-y-2">
-    <div class="grid grid-cols-4 gap-1">
-      <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 active:bg-red-500 py-2 rounded-lg font-bold text-xs shadow">🛑 DUR</button>
-      <button onclick="sendCmd('⚠️ TUZAK!')" class="bg-orange-600 active:bg-orange-500 py-2 rounded-lg font-bold text-xs shadow">⚠️ TUZAK</button>
-      <button onclick="sendCmd('🏍️ GEL!')" class="bg-emerald-600 active:bg-emerald-500 py-2 rounded-lg font-bold text-xs shadow">🏍️ GEL</button>
-      <button onclick="sendCmd('👍 TEMİZ!')" class="bg-blue-600 active:bg-blue-500 py-2 rounded-lg font-bold text-xs shadow">👍 TEMİZ</button>
-    </div>
-    <div class="flex gap-2">
-      <input type="text" id="customMsgInput" placeholder="Özel telsiz mesajı yaz..." class="flex-1 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:border-yellow-400">
-      <button onclick="sendCustomCmd()" class="bg-yellow-500 hover:bg-yellow-400 text-slate-950 px-4 py-2 rounded-lg font-bold text-xs shadow">Gönder</button>
-    </div>
-  </div>
+    let hitWall = false;
 
-  <!-- MOBİL D-PAD -->
-  <div class="mt-4 grid grid-cols-3 gap-2 w-44 mx-auto md:hidden">
-    <div></div>
-    <button onclick="sendMove('UP')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">⬆️</button>
-    <div></div>
-    <button onclick="sendMove('LEFT')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">⬅️</button>
-    <button onclick="sendMove('DOWN')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">⬇️</button>
-    <button onclick="sendMove('RIGHT')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">➡️</button>
-  </div>
-<script>
-    const socket = io();
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-
-    const imgMaviKask = new Image(); imgMaviKask.src = '/assets/mavi-kask.png';
-    const imgKirmiziKask = new Image(); imgKirmiziKask.src = '/assets/kırmızı-kask.png';
-    const imgMotor = new Image(); imgMotor.src = '/assets/motor.png';
-    const imgMaviMotor = new Image(); imgMaviMotor.src = '/assets/motor-mavi.png';
-    const imgKirmiziMotor = new Image(); imgKirmiziMotor.src = '/assets/motor-kirmizi.png';
-    const imgBeraberMotor = new Image(); imgBeraberMotor.src = '/assets/motor-beraber.png';
-    const imgKapiKapali = new Image(); imgKapiKapali.src = '/assets/kapali-garaj.png';
-    const imgKapiAcik = new Image(); imgKapiAcik.src = '/assets/acik-garaj.png';
-
-    const audioMotor = new Audio('/assets/motor-sesi.mp3');
-
-    let myRole = null, selectedMode = 'classic';
-    let currentMap = [], players = [];
-    let driverId = null, together = false, gateOpen = false;
-    let gridSize = 4, currentGameState = 'LOBBY'; 
-
-    function joinGame() {
-      const name = document.getElementById('playerNameInput').value.trim();
-      const roomCode = document.getElementById('roomCodeInput').value.trim();
-      if (!name) { alert("Lütfen bir isim gir!"); return; }
-      if (!roomCode) { alert("Lütfen bir oda kodu gir!"); return; }
-      
-      document.getElementById('nameScreen').classList.add('hidden');
-      document.getElementById('lobbyScreen').classList.remove('hidden');
-      socket.emit('joinRoom', { name, roomCode });
+    if (player.role === 'player1') {
+      if (currentCell === 1) hitWall = true;
+      if (cellTarget === 1) hitWall = true;
+    }
+    if (player.role === 'player2') { 
+      if (currentCell === 2) hitWall = true;
+      if (cellTarget === 2) hitWall = true;
     }
 
-    socket.on('roomFull', (msg) => {
-      alert(msg);
-      document.getElementById('nameScreen').classList.remove('hidden');
-      document.getElementById('lobbyScreen').classList.add('hidden');
-    });
+    if (hitWall) {
+      if (room.driverId) {
+        room.motorLives--;
+        io.to(currentRoomId).emit('motorHit', {});
 
-    function setMode(mode) {
-      selectedMode = mode;
-      document.getElementById('btnClassic').className = mode === 'classic' ? 'flex-1 bg-yellow-500 text-slate-950 py-2 rounded-lg font-bold text-xs' : 'flex-1 bg-slate-800 text-slate-300 py-2 rounded-lg font-bold text-xs';
-      document.getElementById('btnTimed').className = mode === 'timed' ? 'flex-1 bg-yellow-500 text-slate-950 py-2 rounded-lg font-bold text-xs' : 'flex-1 bg-slate-800 text-slate-300 py-2 rounded-lg font-bold text-xs';
-    }
-
-    socket.on('roleAssigned', ({ role }) => {
-      myRole = role;
-      if(role === 'player1') {
-        showTutorial("HOŞ GELDİN (MAVİ KİMLİK)", "Sen Mavi Kask'sın. Sadece DİKEY turuncu duvarları görürsün ve onlara çarparsan!");
-      } else {
-        showTutorial("HOŞ GELDİN (KIRMIZI KİMLİK)", "Sen Kırmızı Kask'sın. Sadece YATAY turuncu duvarları görürsün ve onlara çarparsan!");
-      }
-    });
-
-    function showTutorial(title, desc) {
-      document.getElementById('tutTitle').innerText = title;
-      document.getElementById('tutDesc').innerText = desc;
-      document.getElementById('tutorialOverlay').classList.remove('hidden');
-    }
-    function closeTutorial() {
-      document.getElementById('tutorialOverlay').classList.add('hidden');
-    }
-
-    socket.on('tutorialPopup', ({ title, desc }) => {
-      showTutorial(title, desc);
-    });
-
-    socket.on('gameState', (data) => {
-      currentMap = data.map; players = data.players;
-      driverId = data.driverId; together = data.together;
-      gridSize = data.gridSize; gateOpen = data.gateOpen;
-      currentGameState = data.gameState;
-      
-      const lobby = document.getElementById('lobbyScreen');
-      const gameOverScreen = document.getElementById('gameOverScreen');
-      const lobbyBtns = document.getElementById('lobbyButtons');
-      const status = document.getElementById('lobbyStatus');
-      
-      if (currentGameState === 'LOBBY') {
-        lobby.classList.remove('hidden');
-        gameOverScreen.classList.add('hidden');
-        if (players.length === 2) {
-          status.innerText = "İki oyuncu da hazır!";
-          status.classList.replace('text-slate-400', 'text-emerald-400');
-          lobbyBtns.classList.remove('hidden');
-        } else {
-          status.innerText = "Arkadaşın bekleniyor, aynı oda kodunu girmeli...";
-          status.classList.replace('text-emerald-400', 'text-slate-400');
-          lobbyBtns.classList.add('hidden');
-        }
-      } else if (currentGameState === 'GAMEOVER') {
-        lobby.classList.add('hidden');
-        gameOverScreen.classList.remove('hidden');
-      } else {
-        lobby.classList.add('hidden');
-        gameOverScreen.classList.add('hidden');
-      }
-
-      let infoText = data.level === 0 ? "Eğitim (4x4)" : `Seviye ${data.level} (${gridSize}x${gridSize})`;
-      if (data.gameMode === 'timed') infoText += ` - ${data.timeLeft}sn`;
-      document.getElementById('levelText').innerText = infoText;
-      
-      document.getElementById('motorLivesText').innerText = '❤️ '.repeat(Math.max(0, data.motorLives));
-      
-      const me = players.find(p => p.id === socket.id);
-      if (me) {
-        document.getElementById('playerLives').innerText = '❤️ '.repeat(Math.max(0, me.lives));
-      }
-
-      if(currentGameState === 'PLAYING') render();
-    });
-
-    socket.on('motorHit', () => {
-      canvas.classList.add('border-red-500');
-      setTimeout(() => canvas.classList.remove('border-red-500'), 300);
-    });
-
-    socket.on('msg', (text) => { 
-      document.getElementById('sysMsg').innerText = text; 
-    });
-
-    socket.on('popupMessage', ({ name, text }) => {
-      document.getElementById('popupSender').innerText = `${name} Telsizden Yazdı:`;
-      document.getElementById('popupText').innerText = text;
-      const overlay = document.getElementById('popupOverlay');
-      overlay.classList.remove('hidden');
-      setTimeout(() => overlay.classList.add('hidden'), 2500);
-    });
-
-    socket.on('playSound', (type) => {
-      if (type === 'motorCalisti') { 
-        audioMotor.currentTime = 0; 
-        audioMotor.play().catch(e => console.log("Ses engeli.")); 
-      }
-    });
-
-    function sendMove(dir) { socket.emit('move', dir); }
-    function sendCmd(cmd) { 
-      socket.emit('quickCommand', cmd); 
-      document.getElementById('popupSender').innerText = "Sen Telsizden Söyledin:";
-      document.getElementById('popupText').innerText = cmd;
-      const overlay = document.getElementById('popupOverlay');
-      overlay.classList.remove('hidden');
-      setTimeout(() => overlay.classList.add('hidden'), 2500);
-    }
-    function sendCustomCmd() {
-      const input = document.getElementById('customMsgInput');
-      const text = input.value.trim();
-      if(!text) return;
-      sendCmd(text);
-      input.value = '';
-    }
-    function startGame(level) { socket.emit('startGame', { mode: selectedMode, startingLevel: level }); }
-    function requestRestart() { socket.emit('restartGame'); }
-
-    window.addEventListener('keydown', (e) => {
-      const dirMap = { ArrowUp: 'UP', KeyW: 'UP', ArrowDown: 'DOWN', KeyS: 'DOWN', ArrowLeft: 'LEFT', KeyA: 'LEFT', ArrowRight: 'RIGHT', KeyD: 'RIGHT' };
-      if (dirMap[e.code]) { e.preventDefault(); sendMove(dirMap[e.code]); }
-    });
-
-    function drawImageWithFallback(img, fallbackText, x, y, width, height) {
-      if (img.complete && img.naturalHeight !== 0) {
-        ctx.drawImage(img, x, y, width, height);
-      } else {
-        ctx.font = '20px sans-serif';
-        ctx.fillText(fallbackText, x + 10, y + 30);
-      }
-    }
-
-    function render() {
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-      const tileSize = canvas.width / gridSize;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      for (let r = 0; r < gridSize; r++) {
-        for (let c = 0; c < gridSize; c++) {
-          ctx.strokeStyle = '#27272a';
-          ctx.strokeRect(c * tileSize, r * tileSize, tileSize, tileSize);
-
-          const val = currentMap[r][c];
-          if (val === 1 || val === 2) { 
-            ctx.fillStyle = '#f97316'; 
-            if (val === 1) {
-              ctx.fillRect(c * tileSize + tileSize - 8, r * tileSize, 8, tileSize);
-            } else {
-              ctx.fillRect(c * tileSize, r * tileSize + tileSize - 8, tileSize, 8);
-            }
-          } else if (val === 3) { 
-            ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
-            ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 10, 0, Math.PI*2); ctx.fill();
-          } else if (val === 8) { 
-            drawImageWithFallback(imgMotor, '🏍️', c * tileSize, r * tileSize, tileSize, tileSize);
-          } else if (val === 9) { 
-            if (!gateOpen) {
-              drawImageWithFallback(imgKapiKapali, '🔒', c * tileSize, r * tileSize, tileSize, tileSize);
-            } else {
-              drawImageWithFallback(imgKapiAcik, '🔓', c * tileSize, r * tileSize, tileSize, tileSize);
-            }
+        const emptySpots = [];
+        for(let r=0; r<room.gridSize; r++){
+          for(let c=0; c<room.gridSize; c++){
+            if(room.map[r][c] === 0) emptySpots.push({x: c, y: r});
           }
         }
-      }
-
-      players.forEach(p => {
-        const isDriver = (driverId === p.id);
-        const xPos = p.x * tileSize;
-        const yPos = p.y * tileSize;
-        
-        if (together) {
-          if (isDriver) {
-            drawImageWithFallback(imgBeraberMotor, '🏍️', xPos, yPos, tileSize, tileSize);
+        if(emptySpots.length > 0) {
+          const p1 = room.players[0];
+          const p2 = room.players[1];
+          const spot1 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+          p1.x = spot1.x; p1.y = spot1.y;
+          if (emptySpots.length > 1) {
+            let spot2 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+            p2.x = spot2.x; p2.y = spot2.y;
           }
-          return; 
         }
+        room.together = false;
 
-        if (isDriver) {
-          const activeMotorImg = p.role === 'player1' ? imgMaviMotor : imgKirmiziMotor;
-          drawImageWithFallback(activeMotorImg, '🏍️', xPos, yPos, tileSize, tileSize);
-        } else {
-          const helmetImg = p.role === 'player1' ? imgMaviKask : imgKirmiziKask;
-          ctx.fillStyle = p.role === 'player1' ? '#3b82f644' : '#ef444444';
-          ctx.beginPath(); ctx.arc(xPos + tileSize/2, yPos + tileSize/2, tileSize/2, 0, Math.PI*2); ctx.fill();
-          drawImageWithFallback(helmetImg, '🪖', xPos, yPos, tileSize, tileSize);
+        if (room.motorLives <= 0) {
+          if (room.timerInterval) clearInterval(room.timerInterval);
+          room.gameState = 'GAMEOVER';
+          io.to(currentRoomId).emit('msg', '💥 Motor hurdaya çıktı! Oyun bitti.');
         }
-      });
+      } else {
+        player.lives--;
+        io.to(currentRoomId).emit('msg', `${player.name} duvara çarptı! Can: ${player.lives}`);
+        if (player.lives <= 0) {
+          if (room.timerInterval) clearInterval(room.timerInterval);
+          room.gameState = 'GAMEOVER';
+          io.to(currentRoomId).emit('msg', `💥 ${player.name}'in canı bitti! Oyun bitti.`);
+        }
+      }
+      sendGameState(currentRoomId);
+      return;
     }
-  </script>
-</body>
-</html>
+
+    if (cellTarget === 9 && !room.gateOpen) {
+      io.to(currentRoomId).emit('msg', '🔒 Garaj kapalı! Önce butona basılmalı.');
+      return;
+    }
+
+    player.x = newX;
+    player.y = newY;
+    if (room.together) {
+      const passenger = room.players.find(p => p.id !== room.driverId);
+      passenger.x = newX; passenger.y = newY;
+    }
+
+    if (cellTarget === 3 && !room.gateOpen) { 
+      if (player.role !== room.buttonVisibleTo) {
+        room.gateOpen = true;
+        io.to(currentRoomId).emit('msg', '🔓 GARAJ KAPISI AÇILDI!');
+      } else {
+        io.to(currentRoomId).emit('msg', '❌ Bu butonu sen görüyorsun, basamazsın!');
+      }
+    }
+
+    if (cellTarget === 8 && !room.driverId) { 
+      if (!room.gateOpen) {
+        io.to(currentRoomId).emit('msg', '🔒 Önce butona basıp garaj kapısını açmalısın!');
+        return; 
+      }
+      room.driverId = player.id;
+      room.map[newY][newX] = 0; 
+      io.to(currentRoomId).emit('playSound', 'motorCalisti');
+      io.to(currentRoomId).emit('msg', '🏍️ Motora binildi!');
+    }
+
+    if (room.driverId === player.id && !room.together) { 
+      const otherPlayer = room.players.find(p => p.id !== room.driverId);
+      if (player.x === otherPlayer.x && player.y === otherPlayer.y) {
+        room.together = true;
+        io.to(currentRoomId).emit('msg', '✅ Arkadaşın arkada! Çıkışa sürün.');
+      }
+    }
+
+    if (cellTarget === 9 && room.together) { 
+      if (room.levelIndex === 0) {
+        // EĞİTİM BİTTİĞİNDE POP-UP ÇIKMADAN DİREKT LOBİYE DÖNER
+        room.gameState = 'LOBBY';
+        if (room.timerInterval) clearInterval(room.timerInterval);
+        io.to(currentRoomId).emit('msg', '🎉 Eğitim Tamamlandı! Lobiye dönüldü.');
+      } else {
+        room.levelIndex++;
+        io.to(currentRoomId).emit('msg', `🎉 Seviye ${room.levelIndex} Başlıyor!`);
+        loadLevel(currentRoomId);
+      }
+    }
+
+    sendGameState(currentRoomId);
+  });
+
+  socket.on('quickCommand', (cmd) => {
+    if (!currentRoomId || !rooms[currentRoomId]) return;
+    const sender = rooms[currentRoomId].players.find(p => p.id === socket.id);
+    const senderName = sender ? sender.name : 'Partner';
+    socket.to(currentRoomId).emit('popupMessage', { name: senderName, text: cmd });
+  });
+
+  socket.on('restartGame', () => {
+    if (!currentRoomId || !rooms[currentRoomId]) return;
+    const room = rooms[currentRoomId];
+    room.gameState = 'LOBBY';
+    room.levelIndex = 0;
+    room.motorLives = 3;
+    room.players.forEach(p => p.lives = 3);
+    if (room.timerInterval) clearInterval(room.timerInterval);
+    sendGameState(currentRoomId);
+  });
+
+  socket.on('disconnect', () => {
+    if (currentRoomId && rooms[currentRoomId]) {
+      rooms[currentRoomId].players = rooms[currentRoomId].players.filter(p => p.id !== socket.id);
+      if (rooms[currentRoomId].players.length === 0) {
+        if (rooms[currentRoomId].timerInterval) clearInterval(rooms[currentRoomId].timerInterval);
+        delete rooms[currentRoomId];
+      } else {
+        rooms[currentRoomId].gameState = 'LOBBY';
+        sendGameState(currentRoomId);
+      }
+    }
+  });
+});
+
+function loadLevel(roomId) {
+  const room = rooms[roomId];
+  const levelData = room.levelIndex === 0 ? TUTORIAL_STEPS[0] : generateLevel(room.levelIndex);
+  
+  room.map = JSON.parse(JSON.stringify(levelData.map));
+  room.gridSize = levelData.gridSize;
+  room.buttonVisibleTo = Math.random() > 0.5 ? 'player1' : 'player2';
+  room.gateOpen = false; 
+  room.driverId = null;
+  room.together = false;
+  room.motorLives = 3;
+
+  if(room.players[0]) { room.players[0].x = 0; room.players[0].y = 0; }
+  if(room.players[1]) { room.players[1].x = room.gridSize - 1; room.players[1].y = 0; }
+}
+
+function sendGameState(roomId) {
+  const room = rooms[roomId];
+  room.players.forEach(p => {
+    const filteredMap = room.map.map(row => row.map(cell => {
+      if (cell === 8 || cell === 9) return cell;
+      if (cell === 3) return p.role === room.buttonVisibleTo ? 3 : 0; 
+      if (cell === 1 && p.role === 'player1') return 1; 
+      if (cell === 2 && p.role === 'player2') return 2; 
+      return 0;
+    }));
+    io.to(p.id).emit('gameState', {
+      map: filteredMap, players: room.players, 
+      motorLives: room.motorLives, level: room.levelIndex,
+      driverId: room.driverId, together: room.together,
+      gridSize: room.gridSize, gateOpen: room.gateOpen,
+      gameState: room.gameState, gameMode: room.gameMode, timeLeft: room.timeLeft
+    });
+  });
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Sunucu port ${PORT} üzerinde hazır.`));
