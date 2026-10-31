@@ -10,7 +10,6 @@
 </head>
 <body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2 relative">
 
-  <!-- YENİ: LOBİ VE KURALLAR EKRANI -->
   <div id="lobbyScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center">
     <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">NIGHT RIDERS</h1>
     <p class="text-slate-400 mb-6 text-sm" id="lobbyStatus">Arkadaşın bekleniyor...</p>
@@ -18,7 +17,7 @@
     <div class="bg-slate-900 p-5 rounded-xl border border-slate-700 text-left w-full max-w-sm mb-6 shadow-2xl">
       <h2 class="text-lg font-bold text-white mb-3 border-b border-slate-700 pb-2">Kurallar</h2>
       <ul class="text-sm text-slate-300 space-y-3">
-        <li>🔵 <strong class="text-blue-400">Mavi Kask:</strong> Sadece mavi duvarları görür. Kalkan butonunu göremez.</li>
+        <li>🔵 <strong class="text-blue-400">Mavi Kask:</strong> Sadece mavi duvarları görür. Gizli butonu göremez.</li>
         <li>🔴 <strong class="text-red-400">Kırmızı Kask:</strong> Sadece kırmızı duvarları ve gizli butonu görür.</li>
         <li>🤝 Birbirinize rehberlik edin, kırmızı kask butonu bulup garajı açsın!</li>
         <li>🏍️ İlk ulaşan motoru sürer, diğerini arkasına alıp garaja (🅿️) gider.</li>
@@ -31,7 +30,6 @@
     </div>
   </div>
 
-  <!-- OYUN ARAYÜZÜ -->
   <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-sm relative">
     <div>
       <span class="text-slate-400 block text-xs">ROLÜN</span>
@@ -72,15 +70,18 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
-    // Görsellerin yüklenmesi
+    // TAMPON GÖRSELLERİN YÜKLENMESİ (Klasöründeki isimlerle birebir aynı)
     const imgMaviKask = new Image(); imgMaviKask.src = '/assets/mavi-kask.png';
     const imgKirmiziKask = new Image(); imgKirmiziKask.src = '/assets/kırmızı-kask.png';
     const imgMotor = new Image(); imgMotor.src = '/assets/motor.png';
-    const imgKapiKapali = new Image(); imgKapiKapali.src = '/assets/kapalı-garaj.png';
-    const imgKapiAcik = new Image(); imgKapiAcik.src = '/assets/açık-garaj.png';
+    const imgMaviMotor = new Image(); imgMaviMotor.src = '/assets/mavi-motor.png';
+    const imgKirmiziMotor = new Image(); imgKirmiziMotor.src = '/assets/kırmızı-motor.png';
+    const imgBeraberMotor = new Image(); imgBeraberMotor.src = '/assets/beraber-motor.png';
+    const imgKapiKapali = new Image(); imgKapiKapali.src = '/assets/kapali-garaj.png';
+    const imgKapiAcik = new Image(); imgKapiAcik.src = '/assets/acik-garaj.png';
 
-    // Opsiyonel: Ses efekti için. Eğer klasöre mp3 eklersen çalışır.
-    // const audioMotor = new Audio('/assets/motor-sesi.mp3');
+    // SES DOSYASININ YÜKLENMESİ VE AKTİF EDİLMESİ
+    const audioMotor = new Audio('/assets/motor-sesi.mp3');
 
     let myRole = null, myId = null;
     let currentMap = [], players = [];
@@ -99,7 +100,6 @@
       gridSize = data.gridSize; gateOpen = data.gateOpen;
       currentGameState = data.gameState;
       
-      // Lobi Yönetimi
       const lobby = document.getElementById('lobbyScreen');
       const lobbyBtns = document.getElementById('lobbyButtons');
       const status = document.getElementById('lobbyStatus');
@@ -129,15 +129,18 @@
     socket.on('msg', (text) => { document.getElementById('sysMsg').innerText = text; });
     socket.on('receiveCommand', (cmd) => { document.getElementById('sysMsg').innerText = `Telsiz: ${cmd}`; });
     
-    // Ses tetikleyici
+    // SES TETİKLEYİCİ AÇIK
     socket.on('playSound', (type) => {
-      // if (type === 'motorCalisti') { audioMotor.currentTime = 0; audioMotor.play().catch(e=>e); }
+      if (type === 'motorCalisti') { 
+        audioMotor.currentTime = 0; 
+        audioMotor.play().catch(e => console.log("Otomatik ses engeli: Oyuncu ekrana tıklamalı.")); 
+      }
     });
 
     function updateLives(l) { document.getElementById('livesText').innerText = '❤️ '.repeat(l); }
     function sendMove(dir) { socket.emit('move', dir); }
     function sendCmd(cmd) { socket.emit('quickCommand', cmd); document.getElementById('sysMsg').innerText = `Sen: ${cmd}`; }
-    function startGame(level) { socket.emit('startGame', level); } // Butondan tetiklenir
+    function startGame(level) { socket.emit('startGame', level); }
 
     window.addEventListener('keydown', (e) => {
       const dirMap = { ArrowUp: 'UP', KeyW: 'UP', ArrowDown: 'DOWN', KeyS: 'DOWN', ArrowLeft: 'LEFT', KeyA: 'LEFT', ArrowRight: 'RIGHT', KeyD: 'RIGHT' };
@@ -191,13 +194,14 @@
         
         if (together) {
           if (isDriver) {
-            drawImageWithFallback(imgMotor, '🏍️', xPos + 4, yPos + 4, tileSize - 8, tileSize - 8, 4, 24);
+            drawImageWithFallback(imgBeraberMotor, '🏍️', xPos + 4, yPos + 4, tileSize - 8, tileSize - 8, 4, 24);
           }
           return; 
         }
 
         if (isDriver) {
-          drawImageWithFallback(imgMotor, '🏍️', xPos + 4, yPos + 4, tileSize - 8, tileSize - 8, 4, 24);
+          const activeMotorImg = p.role === 'player1' ? imgMaviMotor : imgKirmiziMotor;
+          drawImageWithFallback(activeMotorImg, '🏍️', xPos + 4, yPos + 4, tileSize - 8, tileSize - 8, 4, 24);
         } else {
           const helmetImg = p.role === 'player1' ? imgMaviKask : imgKirmiziKask;
           ctx.fillStyle = p.role === 'player1' ? '#3b82f644' : '#ef444444';
