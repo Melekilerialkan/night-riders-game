@@ -11,29 +11,32 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let rooms = {};
 
-// 4x4 Kusursuz Eğitim Aşaması
-const TUTORIAL_STEP = {
-  gridSize: 4,
-  map: [
-    [0, 0, 0, 3], // 3: Buton (Sağ Üst)
-    [0, 1, 0, 0], // 1: Dikey Duvar
-    [0, 0, 2, 0], // 2: Yatay Duvar
-    [8, 0, 0, 9]  // 8: Motor (Sol Alt), 9: Garaj (Sağ Alt)
-  ]
-};
+// 4x4 Rehberli Eğitim Adımları
+const TUTORIAL_STEPS = [
+  {
+    instruction: "BÖLÜM 1: Arkadaşın gizli butonu görüyor. Ona telsizden 'GEL' de ve yönlendir!",
+    gridSize: 4,
+    map: [
+      [0, 0, 0, 3],
+      [0, 1, 0, 0],
+      [0, 0, 2, 0],
+      [8, 0, 0, 9]
+    ]
+  }
+];
 
 function generateLevel(levelIndex) {
-  const size = Math.min(4 + levelIndex, 10); // 4x4 ile başlar, büyür
+  const size = Math.min(4 + levelIndex, 10);
   let map = Array(size).fill(0).map(() => Array(size).fill(0));
 
-  map[size-1][size-1] = 9; // Garaj
-  map[size-1][0] = 8;      // Motor
-  map[0][Math.floor(size/2)] = 3; // Buton
+  map[size-1][size-1] = 9; 
+  map[size-1][0] = 8;      
+  map[0][Math.floor(size/2)] = 3; 
 
   for (let r = 1; r < size - 1; r++) {
     for (let c = 1; c < size - 1; c++) {
       if (Math.random() < 0.20) {
-        map[r][c] = Math.random() > 0.5 ? 1 : 2; // 1: Dikey, 2: Yatay
+        map[r][c] = Math.random() > 0.5 ? 1 : 2; 
       }
     }
   }
@@ -51,7 +54,7 @@ io.on('connection', (socket) => {
         players: [], levelIndex: 0, motorLives: 3, 
         gameMode: 'classic', timeLeft: 60, timerInterval: null,
         gateOpen: false, driverId: null, together: false, map: [], gridSize: 4,
-        gameState: 'LOBBY', buttonVisibleTo: 'player1'
+        gameState: 'LOBBY', buttonVisibleTo: 'player1', currentTutorialStep: 0
       };
     }
 
@@ -138,7 +141,8 @@ io.on('connection', (socket) => {
     }
 
     if (hitWall) {
-      if (room.together) {
+      // MOTOR KULLANIRKEN (YALNIZ BİNİCİ VEYA BERABERKEN) ÇARPARSAK SAVRULURUZ
+      if (room.driverId) {
         room.motorLives--;
         io.to(currentRoomId).emit('motorHit', {});
 
@@ -166,6 +170,7 @@ io.on('connection', (socket) => {
           io.to(currentRoomId).emit('msg', '💥 Motor hurdaya çıktı! Oyun bitti.');
         }
       } else {
+        // Henüz motora binmediyse sadece kendi canı gider, savrulmaz
         player.lives--;
         io.to(currentRoomId).emit('msg', `${player.name} duvara çarptı! Can: ${player.lives}`);
         if (player.lives <= 0) {
@@ -190,25 +195,25 @@ io.on('connection', (socket) => {
       passenger.x = newX; passenger.y = newY;
     }
 
-    // Buton Etkileşimi
     if (cellTarget === 3 && !room.gateOpen) { 
       if (player.role !== room.buttonVisibleTo) {
         room.gateOpen = true;
+        io.to(currentRoomId).emit('tutorialPopup', { title: "KAPI AÇILDI!", desc: "Şimdi motora binip garaja sürün." });
         io.to(currentRoomId).emit('msg', '🔓 GARAJ AÇILDI! Şimdi motora binebilirsiniz.');
       } else {
         io.to(currentRoomId).emit('msg', '❌ Sen bu butonu görüyorsun, basamazsın! Görmeyen arkadaşını yönlendir.');
       }
     }
 
-    // KURAL: GARAJ AÇILMADAN MOTORA KESİNLİKLE BİNİLEMEZ!
     if (cellTarget === 8 && !room.driverId) { 
       if (!room.gateOpen) {
-        io.to(currentRoomId).emit('msg', '🔒 Önce butona basıp garaj kapısını açmalısın! Motor kilitli.');
-        return; // Motora binilmesini engeller
+        io.to(currentRoomId).emit('msg', '🔒 Önce butona basıp garaj kapısını açmalısın!');
+        return; 
       }
       room.driverId = player.id;
       room.map[newY][newX] = 0; 
       io.to(currentRoomId).emit('playSound', 'motorCalisti');
+      io.to(currentRoomId).emit('tutorialPopup', { title: "MOTORA BİNDİN!", desc: "Şimdi diğer oyuncuyu arkaya al ve çıkışa sür!" });
       io.to(currentRoomId).emit('msg', '🏍️ Motora binildi! Şimdi arkadaşını arkaya al.');
     }
 
@@ -216,6 +221,7 @@ io.on('connection', (socket) => {
       const otherPlayer = room.players.find(p => p.id !== room.driverId);
       if (player.x === otherPlayer.x && player.y === otherPlayer.y) {
         room.together = true;
+        io.to(currentRoomId).emit('tutorialPopup', { title: "BİRLEŞTİNİZ!", desc: "Sağ alttaki garaja doğru sürün!" });
         io.to(currentRoomId).emit('msg', '✅ Arkadaşın arkada! Çıkış garajına sür!');
       }
     }
@@ -224,6 +230,7 @@ io.on('connection', (socket) => {
       if (room.levelIndex === 0) {
         room.gameState = 'LOBBY';
         if (room.timerInterval) clearInterval(room.timerInterval);
+        io.to(currentRoomId).emit('tutorialPopup', { title: "EĞİTİM BİTTİ!", desc: "Lobiye dönülüyor. Oyunu başlatabilirsiniz!" });
         io.to(currentRoomId).emit('msg', '🎉 Eğitim Başarıyla Tamamlandı! Lobiye dönülüyor...');
       } else {
         room.levelIndex++;
@@ -269,7 +276,7 @@ io.on('connection', (socket) => {
 
 function loadLevel(roomId) {
   const room = rooms[roomId];
-  const levelData = room.levelIndex === 0 ? TUTORIAL_STEP : generateLevel(room.levelIndex);
+  const levelData = room.levelIndex === 0 ? TUTORIAL_STEPS[0] : generateLevel(room.levelIndex);
   
   room.map = JSON.parse(JSON.stringify(levelData.map));
   room.gridSize = levelData.gridSize;

@@ -46,9 +46,9 @@
         <button onclick="setMode('timed')" id="btnTimed" class="flex-1 bg-slate-800 text-slate-300 py-2 rounded-lg font-bold text-xs">Zamana Karşı</button>
       </div>
       <ul class="text-xs text-slate-300 space-y-2">
-        <li>🗺️ <b>Eğitim 4x4 ile başlar</b>, sonra her bölümde büyür.</li>
-        <li>🧱 Kırmızı yatay duvarlara, Mavi dikey duvarlara çarpar.</li>
-        <li>🔒 Önce butona basıp kapı açılmalı, yoksa motora binilemez!</li>
+        <li>🗺️ <b>Eğitim 4x4 ile başlar</b> ve adımlarla öğretir.</li>
+        <li>🧱 Kırmızı yatay, Mavi dikey duvarları görür ve onlara çarpar.</li>
+        <li>🏍️ Motora bindiğinizden itibaren kazalarda savrulursunuz!</li>
       </ul>
     </div>
     
@@ -63,6 +63,16 @@
     <h1 class="text-4xl font-extrabold text-red-500 mb-2">OYUN BİTTİ</h1>
     <p class="text-slate-300 mb-6 text-sm" id="gameOverReason">Canlar tükendi veya süre bitti.</p>
     <button onclick="requestRestart()" class="bg-yellow-500 hover:bg-yellow-400 text-slate-950 px-8 py-3 rounded-xl font-bold shadow-lg text-base">Tekrar Dene</button>
+  </div>
+
+  <!-- EĞİTİM / REHBER POP-UP BİLDİRİMİ -->
+  <div id="tutorialOverlay" class="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border-2 border-yellow-400 p-6 rounded-2xl text-center max-w-sm w-full shadow-2xl">
+      <span class="text-xs text-yellow-400 font-bold uppercase tracking-widest block mb-1">🎮 REHBER / EĞİTİM</span>
+      <h3 id="tutTitle" class="text-xl font-extrabold text-white mb-2">GÖREV</h3>
+      <p id="tutDesc" class="text-sm text-slate-300 mb-6">Açıklama buraya gelecek...</p>
+      <button onclick="closeTutorial()" class="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 py-3 rounded-xl font-bold shadow-lg">Anladım, Devam Et</button>
+    </div>
   </div>
 
   <!-- TELSİZ POP-UP BİLDİRİMİ -->
@@ -119,8 +129,7 @@
     <button onclick="sendMove('DOWN')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">⬇️</button>
     <button onclick="sendMove('RIGHT')" class="bg-slate-700 active:bg-slate-500 p-3 rounded-xl text-xl shadow-lg border-b-4 border-slate-900">➡️</button>
   </div>
-
-  <script>
+<script>
     const socket = io();
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -166,6 +175,24 @@
 
     socket.on('roleAssigned', ({ role }) => {
       myRole = role;
+      if(role === 'player1') {
+        showTutorial("HOŞ GELDİN (MAVİ KİMLİK)", "Sen Mavi Kask'sın. Sadece DİKEY turuncu duvarları görürsün ve onlara çarparsan!");
+      } else {
+        showTutorial("HOŞ GELDİN (KIRMIZI KİMLİK)", "Sen Kırmızı Kask'sın. Sadece YATAY turuncu duvarları görürsün ve onlara çarparsan!");
+      }
+    });
+
+    function showTutorial(title, desc) {
+      document.getElementById('tutTitle').innerText = title;
+      document.getElementById('tutDesc').innerText = desc;
+      document.getElementById('tutorialOverlay').classList.remove('hidden');
+    }
+    function closeTutorial() {
+      document.getElementById('tutorialOverlay').classList.add('hidden');
+    }
+
+    socket.on('tutorialPopup', ({ title, desc }) => {
+      showTutorial(title, desc);
     });
 
     socket.on('gameState', (data) => {
@@ -265,7 +292,7 @@
       if (img.complete && img.naturalHeight !== 0) {
         ctx.drawImage(img, x, y, width, height);
       } else {
-        ctx.font = '24px sans-serif';
+        ctx.font = '20px sans-serif';
         ctx.fillText(fallbackText, x + 10, y + 30);
       }
     }
@@ -291,7 +318,7 @@
             }
           } else if (val === 3) { 
             ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
-            ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 12, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 10, 0, Math.PI*2); ctx.fill();
           } else if (val === 8) { 
             drawImageWithFallback(imgMotor, '🏍️', c * tileSize, r * tileSize, tileSize, tileSize);
           } else if (val === 9) { 
