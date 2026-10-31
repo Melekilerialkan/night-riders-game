@@ -17,15 +17,15 @@
     <div class="bg-slate-900 p-5 rounded-xl border border-slate-700 text-left w-full max-w-sm mb-6 shadow-2xl">
       <h2 class="text-lg font-bold text-white mb-3 border-b border-slate-700 pb-2">Kurallar</h2>
       <ul class="text-sm text-slate-300 space-y-3">
-        <li>🔵 <strong class="text-blue-400">Mavi Kask:</strong> Sadece mavi duvarları görür. Gizli butonu göremez.</li>
-        <li>🔴 <strong class="text-red-400">Kırmızı Kask:</strong> Sadece kırmızı duvarları ve gizli butonu görür.</li>
-        <li>🤝 Birbirinize rehberlik edin, kırmızı kask butonu bulup garajı açsın!</li>
-        <li>🏍️ İlk ulaşan motoru sürer, diğerini arkasına alıp garaja (🅿️) gider.</li>
+        <li>🧱 Duvarları birbirinize tarif edin, çarpmamaya dikkat edin!</li>
+        <li>🔘 Gizli butonu sadece biriniz görebilir. <b>Gören kişi arkadaşını yönlendirmeli, butona sadece GÖRMEYEN kişi basabilir!</b></li>
+        <li>🏍️ Butona basıldığında garaj açılır. Motora koşun, ilk binen şoför olur.</li>
+        <li>🤝 Arkadaşını arkaya al ve birlikte garaja (çıkışa) gir.</li>
       </ul>
     </div>
     
     <div class="flex gap-3 w-full max-w-sm hidden" id="lobbyButtons">
-      <button onclick="startGame(0)" class="flex-1 bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold text-white shadow-lg text-sm">🎓 Eğitim</button>
+      <button onclick="startGame(0)" class="flex-1 bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold text-white shadow-lg text-sm">🎓 Eğitim Modu</button>
       <button onclick="startGame(1)" class="flex-1 bg-red-600 hover:bg-red-500 py-3 rounded-xl font-bold text-white shadow-lg text-sm">🚀 Direkt Başla</button>
     </div>
   </div>
@@ -45,9 +45,11 @@
     </div>
   </div>
 
-  <div id="sysMsg" class="h-6 text-yellow-300 font-bold mb-4 animate-pulse text-sm text-center">Eşleşme bekleniyor...</div>
+  <!-- BİLDİRİM BARI DAHA DİKKAT ÇEKİCİ YAPILDI -->
+  <div id="sysMsg" class="h-auto min-h-[24px] text-yellow-300 font-bold mb-4 text-sm text-center px-2">Eşleşme bekleniyor...</div>
 
-  <canvas id="gameCanvas" width="360" height="360" class="border-2 border-slate-700 rounded-xl bg-slate-900 shadow-2xl w-full max-w-[360px]"></canvas>
+  <!-- YENİ: ARKA PLAN FÜME RENGİ (bg-zinc-700) -->
+  <canvas id="gameCanvas" width="360" height="360" class="border-2 border-slate-800 rounded-xl bg-zinc-700 shadow-2xl w-full max-w-[360px]"></canvas>
     
   <div class="w-full max-w-[360px] grid grid-cols-4 gap-1 mt-4">
     <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 active:bg-red-500 py-3 rounded-lg font-bold text-xs shadow">🛑 DUR</button>
@@ -70,7 +72,6 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
-    // TAMPON GÖRSELLERİN YÜKLENMESİ (Klasöründeki isimlerle birebir aynı)
     const imgMaviKask = new Image(); imgMaviKask.src = '/assets/mavi-kask.png';
     const imgKirmiziKask = new Image(); imgKirmiziKask.src = '/assets/kırmızı-kask.png';
     const imgMotor = new Image(); imgMotor.src = '/assets/motor.png';
@@ -80,7 +81,6 @@
     const imgKapiKapali = new Image(); imgKapiKapali.src = '/assets/kapali-garaj.png';
     const imgKapiAcik = new Image(); imgKapiAcik.src = '/assets/acik-garaj.png';
 
-    // SES DOSYASININ YÜKLENMESİ VE AKTİF EDİLMESİ
     const audioMotor = new Audio('/assets/motor-sesi.mp3');
 
     let myRole = null, myId = null;
@@ -126,10 +126,16 @@
       setTimeout(() => canvas.classList.remove('border-red-500'), 300);
     });
 
-    socket.on('msg', (text) => { document.getElementById('sysMsg').innerText = text; });
+    socket.on('msg', (text) => { 
+      const msgBox = document.getElementById('sysMsg');
+      msgBox.innerText = text; 
+      msgBox.classList.remove('animate-pulse'); // Mesaj geldiğinde animasyonu sıfırla
+      void msgBox.offsetWidth; // DOM Reflow tetiklemesi
+      msgBox.classList.add('animate-pulse');
+    });
+
     socket.on('receiveCommand', (cmd) => { document.getElementById('sysMsg').innerText = `Telsiz: ${cmd}`; });
     
-    // SES TETİKLEYİCİ AÇIK
     socket.on('playSound', (type) => {
       if (type === 'motorCalisti') { 
         audioMotor.currentTime = 0; 
@@ -151,7 +157,7 @@
       if (img.complete && img.naturalHeight !== 0) {
         ctx.drawImage(img, x, y, width, height);
       } else {
-        ctx.font = '20px sans-serif';
+        ctx.font = '24px sans-serif';
         ctx.fillText(fallbackText, x + textOffsetX, y + textOffsetY);
       }
     }
@@ -159,10 +165,14 @@
     function render() {
       const tileSize = canvas.width / gridSize;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // YENİ: Görselleri kocaman yapmak için boşluğu (padding) azalttık
+      const pad = 2;
+      const imgSize = tileSize - (pad * 2); 
 
       for (let r = 0; r < gridSize; r++) {
         for (let c = 0; c < gridSize; c++) {
-          ctx.strokeStyle = '#1e293b';
+          ctx.strokeStyle = '#27272a'; // Duvarlar belli olsun diye zemin grid rengini hafif koyulaştırdık
           ctx.strokeRect(c * tileSize, r * tileSize, tileSize, tileSize);
 
           const val = currentMap[r][c];
@@ -172,17 +182,16 @@
             ctx.fillStyle = '#ef4444'; ctx.fillRect(c * tileSize, r * tileSize + tileSize - 6, tileSize, 6);
           } else if (val === 3) { 
             ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
-            ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 10, 0, Math.PI*2); ctx.fill();
-          } else if (val === 4) { 
-            if (!gateOpen) {
-              drawImageWithFallback(imgKapiKapali, '🔒', c * tileSize + 4, r * tileSize + 4, tileSize - 8, tileSize - 8, 4, 24);
-            } else {
-              drawImageWithFallback(imgKapiAcik, '🔓', c * tileSize + 4, r * tileSize + 4, tileSize - 8, tileSize - 8, 4, 24);
-            }
+            ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 12, 0, Math.PI*2); ctx.fill();
           } else if (val === 8) { 
-            drawImageWithFallback(imgMotor, '🏍️', c * tileSize + 4, r * tileSize + 4, tileSize - 8, tileSize - 8, 4, 24);
+            drawImageWithFallback(imgMotor, '🏍️', c * tileSize + pad, r * tileSize + pad, imgSize, imgSize, 4, 30);
           } else if (val === 9) { 
-            ctx.font = '24px sans-serif'; ctx.fillText('🅿️', c * tileSize + 4, r * tileSize + 28);
+            // YENİ: Garaj kapısı P olmadan, bulunduğu kutuyu tamamen dolduracak şekilde çiziliyor
+            if (!gateOpen) {
+              drawImageWithFallback(imgKapiKapali, '🔒', c * tileSize, r * tileSize, tileSize, tileSize, 10, 32);
+            } else {
+              drawImageWithFallback(imgKapiAcik, '🔓', c * tileSize, r * tileSize, tileSize, tileSize, 10, 32);
+            }
           }
         }
       }
@@ -194,19 +203,21 @@
         
         if (together) {
           if (isDriver) {
-            drawImageWithFallback(imgBeraberMotor, '🏍️', xPos + 4, yPos + 4, tileSize - 8, tileSize - 8, 4, 24);
+            drawImageWithFallback(imgBeraberMotor, '🏍️', xPos + pad, yPos + pad, imgSize, imgSize, 4, 30);
           }
           return; 
         }
 
         if (isDriver) {
           const activeMotorImg = p.role === 'player1' ? imgMaviMotor : imgKirmiziMotor;
-          drawImageWithFallback(activeMotorImg, '🏍️', xPos + 4, yPos + 4, tileSize - 8, tileSize - 8, 4, 24);
+          drawImageWithFallback(activeMotorImg, '🏍️', xPos + pad, yPos + pad, imgSize, imgSize, 4, 30);
         } else {
           const helmetImg = p.role === 'player1' ? imgMaviKask : imgKirmiziKask;
+          // Arka plan takım renk ışığı
           ctx.fillStyle = p.role === 'player1' ? '#3b82f644' : '#ef444444';
           ctx.beginPath(); ctx.arc(xPos + tileSize/2, yPos + tileSize/2, 18, 0, Math.PI*2); ctx.fill();
-          drawImageWithFallback(helmetImg, '🪖', xPos + 8, yPos + 8, tileSize - 16, tileSize - 16, 4, 24);
+          // Kocaman kask çizimi
+          drawImageWithFallback(helmetImg, '🪖', xPos + pad, yPos + pad, imgSize, imgSize, 4, 30);
         }
       });
     }
