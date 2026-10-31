@@ -23,7 +23,6 @@
 </head>
 <body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2 relative">
 
-  <!-- İSİM VE ODA KODU GİRME EKRANI -->
   <div id="nameScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center">
     <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">NIGHT RIDERS</h1>
     <p class="text-slate-400 mb-6 text-sm">Gece Sürüşü İşbirliği Bulmacası</p>
@@ -34,7 +33,6 @@
     </div>
   </div>
 
-  <!-- LOBİ EKRANI -->
   <div id="lobbyScreen" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-4 text-center hidden">
     <h1 class="text-4xl font-extrabold text-yellow-400 mb-2">LOBİ</h1>
     <p class="text-slate-400 mb-6 text-sm" id="lobbyStatus">Arkadaşın bekleniyor...</p>
@@ -46,9 +44,9 @@
         <button onclick="setMode('timed')" id="btnTimed" class="flex-1 bg-slate-800 text-slate-300 py-2 rounded-lg font-bold text-xs">Zamana Karşı</button>
       </div>
       <ul class="text-xs text-slate-300 space-y-2">
-        <li>🧱 Duvarlar turuncu görünür, ancak <b>yalnızca senin rengin olanlar</b> sana çarpar.</li>
+        <li>🧱 Duvarlar turuncu görünür, ancak <b>yalnızca senin duvarların</b> sana çarpar.</li>
         <li>🔘 Butonu göremeyen kişi basabilir! Arkadaşını yönlendir.</li>
-        <li>💥 Duvara çarpınca motor hasar alır (3 canı vardır), etrafa savrulursunuz!</li>
+        <li>💥 Duvara çarpınca motor sabit kalır, kasklar rastgele savrulur!</li>
       </ul>
     </div>
     
@@ -58,7 +56,6 @@
     </div>
   </div>
 
-  <!-- TELSİZ POP-UP BİLDİRİMİ -->
   <div id="popupOverlay" class="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center hidden pointer-events-none">
     <div class="bg-slate-900 border-2 border-yellow-400 px-8 py-6 rounded-2xl text-center shadow-2xl animate-bounce">
       <span id="popupSender" class="text-xs text-yellow-400 block mb-1 uppercase tracking-widest font-bold">Telsiz Mesajı</span>
@@ -66,7 +63,6 @@
     </div>
   </div>
 
-  <!-- OYUN ÜST BARI -->
   <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-sm relative">
     <div>
       <span class="text-slate-400 block text-xs">ROLÜN</span>
@@ -84,12 +80,10 @@
 
   <div id="sysMsg" class="h-auto min-h-[24px] text-yellow-300 font-bold mb-4 text-sm text-center px-2">Eşleşme bekleniyor...</div>
 
-  <!-- CANVAS -->
   <div id="canvas-container">
     <canvas id="gameCanvas" width="400" height="400" class="border-2 border-slate-800 rounded-xl bg-zinc-700 shadow-2xl"></canvas>
   </div>
     
-  <!-- TELSİZ DÜĞMELERİ -->
   <div class="w-full max-w-[400px] grid grid-cols-4 gap-1 mt-4">
     <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 active:bg-red-500 py-3 rounded-lg font-bold text-xs shadow">🛑 DUR</button>
     <button onclick="sendCmd('⚠️ TUZAK!')" class="bg-orange-600 active:bg-orange-500 py-3 rounded-lg font-bold text-xs shadow">⚠️ TUZAK</button>
@@ -97,7 +91,6 @@
     <button onclick="sendCmd('👍 TEMİZ!')" class="bg-blue-600 active:bg-blue-500 py-3 rounded-lg font-bold text-xs shadow">👍 TEMİZ</button>
   </div>
 
-  <!-- MOBİL D-PAD -->
   <div class="mt-6 grid grid-cols-3 gap-2 w-48 mx-auto md:hidden">
     <div></div>
     <button onclick="sendMove('UP')" class="bg-slate-700 active:bg-slate-500 p-4 rounded-xl text-2xl shadow-lg border-b-4 border-slate-900">⬆️</button>
@@ -254,10 +247,14 @@
           ctx.strokeRect(c * tileSize, r * tileSize, tileSize, tileSize);
 
           const val = currentMap[r][c];
+          // DİKEY (1) VE YATAY (2) DUVARLARIN NET GÖRÜNMESİ SAĞLANDI
           if (val === 1 || val === 2) { 
             ctx.fillStyle = '#f97316'; 
-            if (val === 1) ctx.fillRect(c * tileSize + tileSize - 6, r * tileSize, 6, tileSize);
-            else ctx.fillRect(c * tileSize, r * tileSize + tileSize - 6, tileSize, 6);
+            if (val === 1) {
+              ctx.fillRect(c * tileSize + tileSize - 8, r * tileSize, 8, tileSize); // Dikey duvar kalınlaştırıldı
+            } else {
+              ctx.fillRect(c * tileSize, r * tileSize + tileSize - 8, tileSize, 8); // Yatay duvar kalınlaştırıldı
+            }
           } else if (val === 3) { 
             ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
             ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 12, 0, Math.PI*2); ctx.fill();

@@ -37,7 +37,7 @@ function generateRandomLevel(levelIndex) {
   for (let r = 1; r < size - 1; r++) {
     for (let c = 1; c < size - 1; c++) {
       if (Math.random() < 0.20) {
-        map[r][c] = Math.random() > 0.5 ? 1 : 2;
+        map[r][c] = Math.random() > 0.5 ? 1 : 2; // 1: Dikey, 2: Yatay
       }
     }
   }
@@ -50,7 +50,6 @@ io.on('connection', (socket) => {
   socket.on('joinRoom', ({ name, roomCode }) => {
     currentRoomId = roomCode ? roomCode.trim() : "main-room";
     
-    // Eğer oda yoksa veya sıfırlandıysa oluştur
     if (!rooms[currentRoomId]) {
       rooms[currentRoomId] = {
         players: [], levelIndex: 0, motorLives: 3, 
@@ -74,7 +73,6 @@ io.on('connection', (socket) => {
     room.players.push({ id: socket.id, name: name || 'Sürücü', role, x: initPos.x, y: initPos.y });
     socket.emit('roleAssigned', { role });
 
-    // Odaydaki herkese güncel durumu fırlat
     sendGameState(currentRoomId);
   });
 
@@ -112,7 +110,8 @@ io.on('connection', (socket) => {
     if (room.players.length < 2 || room.gameState !== 'PLAYING') return;
 
     const player = room.players.find(p => p.id === socket.id);
-    if (!player || (room.together && room.driverId !== player.id)) return;
+    if (!player) return;
+    if (room.together && room.driverId !== player.id) return; // Şoför sürer, yolcu karışamaz
 
     let newX = player.x, newY = player.y;
     if (dir === 'UP') newY--;
@@ -127,19 +126,25 @@ io.on('connection', (socket) => {
     
     let hitWall = false;
 
+    // Asimetrik Çarpışma Kontrolü
     if (player.role === 'player1') {
       if (dir === 'DOWN' && currentCell === 1) hitWall = true; 
       if (dir === 'UP' && cellTarget === 1) hitWall = true;    
+      if (dir === 'RIGHT' && currentCell === 1) hitWall = true;
+      if (dir === 'LEFT' && cellTarget === 1) hitWall = true;
     }
     if (player.role === 'player2') { 
       if (dir === 'RIGHT' && currentCell === 2) hitWall = true; 
       if (dir === 'LEFT' && cellTarget === 2) hitWall = true;   
+      if (dir === 'UP' && cellTarget === 2) hitWall = true;
+      if (dir === 'DOWN' && currentCell === 2) hitWall = true;
     }
 
     if (hitWall) {
       room.motorLives--;
       io.to(currentRoomId).emit('motorHit', { motorLives: room.motorLives });
       
+      // ÇARPIŞINCA MOTOR YERİNDE KALIR, OYUNCULAR (KASKLAR) RASTGELE BOŞ BİR KAREYE SAVRULUR
       const emptySpots = [];
       for(let r=0; r<room.gridSize; r++){
         for(let c=0; c<room.gridSize; c++){
@@ -147,14 +152,21 @@ io.on('connection', (socket) => {
         }
       }
       if(emptySpots.length > 0) {
-        const randomSpot = emptySpots[Math.floor(Math.random() * emptySpots.length)];
-        player.x = randomSpot.x;
-        player.y = randomSpot.y;
-        if(room.together) {
-          const passenger = room.players.find(p => p.id !== room.driverId);
-          passenger.x = randomSpot.x; passenger.y = randomSpot.y;
+        const p1 = room.players[0];
+        const p2 = room.players[1];
+        
+        const spot1 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+        p1.x = spot1.x; p1.y = spot1.y;
+
+        if (emptySpots.length > 1) {
+          let spot2 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+          while(spot2.x === spot1.x && spot2.y === spot1.y) {
+            spot2 = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+          }
+          p2.x = spot2.x; p2.y = spot2.y;
         }
       }
+      room.together = false; // Kaza yapınca ayrılırlar
 
       if (room.motorLives <= 0) {
         if (room.timerInterval) clearInterval(room.timerInterval);
@@ -177,6 +189,7 @@ io.on('connection', (socket) => {
       passenger.x = newX; passenger.y = newY;
     }
 
+    // Butona sadece GÖRMEYEN kişi basabilir
     if (cellTarget === 3 && !room.gateOpen) { 
       if (player.role !== room.buttonVisibleTo) {
         room.gateOpen = true;
@@ -186,15 +199,17 @@ io.on('connection', (socket) => {
       }
     }
 
+    // MOTORA BİNME (Sadece şoför yoksa ilk gelen biner)
     if (cellTarget === 8 && !room.driverId) { 
       room.driverId = player.id;
-      room.map[newY][newX] = 0; 
+      room.map[newY][newX] = 0; // Motor haritadan silinir, oyuncunun altına geçer
       io.to(currentRoomId).emit('playSound', 'motorCalisti');
-      io.to(currentRoomId).emit('msg', '🏍️ Motora bindi! Şimdi arkadaşını al.');
+      io.to(currentRoomId).emit('msg', '🏍️ Motora binildi! Şimdi diğer oyuncuyu yanına al.');
     }
 
+    // ARKADAŞI ARKAYA ALMA
     if (room.driverId === player.id && !room.together) { 
-      const otherPlayer = room.players.find(p => p.id !== room.id);
+      const otherPlayer = room.players.find(p => p.id !== room.driverId);
       if (player.x === otherPlayer.x && player.y === otherPlayer.y) {
         room.together = true;
         io.to(currentRoomId).emit('msg', '✅ Arkadaşın arkada! Çıkış garajına sür!');
@@ -230,7 +245,6 @@ io.on('connection', (socket) => {
         if (rooms[currentRoomId].timerInterval) clearInterval(rooms[currentRoomId].timerInterval);
         delete rooms[currentRoomId];
       } else {
-        // Biri çıkarsa kalan kişiyi lobiye düşür
         rooms[currentRoomId].gameState = 'LOBBY';
         sendGameState(currentRoomId);
       }
