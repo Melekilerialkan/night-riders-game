@@ -270,6 +270,7 @@
           }
 
           ctx.strokeStyle = '#27272a';
+          ctx.lineWidth = 1;
           ctx.strokeRect(c * tileSize, r * tileSize, tileSize, tileSize);
 
           if (!isVisible) {
@@ -279,16 +280,23 @@
           }
 
           const val = currentMap[r][c];
+          
+          // --- ÇİZGİSEL DUVAR ÇİZİMİ (Kalın Blok Yerine İnce Sınır Çizgisi) ---
           if (val === 1 || val === 2) { 
-            ctx.fillStyle = '#f97316'; 
-            // DUVARLARI HÜCRENİN KENARINA (SINIR ÇİZGİSİ GİBİ) ÇİZİYORUZ
+            ctx.lineWidth = 4; // Çizgi kalınlığı
+            ctx.strokeStyle = '#f97316'; // Turuncu renk
+            ctx.beginPath();
             if (val === 1) { 
-              // DİKEY DUVAR - Hücrenin SAĞ kenarında
-              ctx.fillRect(c * tileSize + tileSize - 8, r * tileSize, 8, tileSize);
+              // DİKEY DUVAR - Karenin SAĞ sınırına çizgi çeker
+              ctx.moveTo(c * tileSize + tileSize, r * tileSize);
+              ctx.lineTo(c * tileSize + tileSize, r * tileSize + tileSize);
             } else {         
-              // YATAY DUVAR - Hücrenin ALT kenarında
-              ctx.fillRect(c * tileSize, r * tileSize + tileSize - 8, tileSize, 8);
+              // YATAY DUVAR - Karenin ALT sınırına çizgi çeker
+              ctx.moveTo(c * tileSize, r * tileSize + tileSize);
+              ctx.lineTo(c * tileSize + tileSize, r * tileSize + tileSize);
             }
+            ctx.stroke();
+            ctx.lineWidth = 1; // Diğer çizimler (grid) için kalınlığı normale döndür
           } else if (val === 3) { 
             ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
             ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 10, 0, Math.PI*2); ctx.fill();

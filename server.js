@@ -36,7 +36,6 @@ function generateLevel(levelIndex) {
     motorX = Math.floor(Math.random() * (size - 2)) + 1;
   }
 
-  // Başlangıç noktalarının üzerine obje gelmemesi için koruma
   if (buttonX === 0 && buttonY === 0) buttonX = 1;
   if (buttonX === size-1 && buttonY === 0) buttonY = 1;
 
@@ -46,7 +45,6 @@ function generateLevel(levelIndex) {
 
   for (let r = 0; r < size; r++) {
     for (let c = 0; c < size; c++) {
-      // 0,0 (Mavi Başlangıç) ve sağ üst (Kırmızı Başlangıç) noktalarına DUVAR KOYULAMAZ
       if ((r === 0 && c === 0) || (r === 0 && c === size - 1)) continue;
 
       if (map[r][c] === 0 && Math.random() < 0.20) {
@@ -81,11 +79,8 @@ io.on('connection', (socket) => {
 
     socket.join(currentRoomId);
     
-    // Rolleri kesin olarak ata ve eski karışıklıkları önle
     let assignedRole = 'player1';
-    if (room.players.find(p => p.role === 'player1')) {
-      assignedRole = 'player2';
-    }
+    if (room.players.find(p => p.role === 'player1')) assignedRole = 'player2';
     
     const initPos = assignedRole === 'player1' ? { x: 0, y: 0 } : { x: room.gridSize - 1, y: 0 };
     
@@ -152,11 +147,19 @@ io.on('connection', (socket) => {
 
     if (newX < 0 || newX >= room.gridSize || newY < 0 || newY >= room.gridSize) return;
 
+    const currentCell = room.map[player.y][player.x];
     const cellTarget = room.map[newY][newX];
     let hitWall = false;
 
-    // YENİ KUSURSUZ MANTIK: Kim olursan ol, ister gör ister görme; 1 (Dikey) ve 2 (Yatay) duvarların HİÇBİR YÖNÜNDEN GEÇEMEZSİN!
-    if (cellTarget === 1 || cellTarget === 2) hitWall = true;
+    // --- KUSURSUZ YÖNLÜ ÇARPIŞMA (DIRECTIONAL COLLISION) ---
+    // 1: Dikey Duvar (Hücrenin SAĞ kenarındadır)
+    // 2: Yatay Duvar (Hücrenin ALT kenarındadır)
+
+    if (dir === 'RIGHT' && currentCell === 1) hitWall = true; // Kendi sağımızdaki duvara tosladık
+    if (dir === 'LEFT' && cellTarget === 1) hitWall = true;   // Gittiğimiz hücrenin sağındaki duvara tosladık
+
+    if (dir === 'DOWN' && currentCell === 2) hitWall = true;  // Kendi altımızdaki duvara tosladık
+    if (dir === 'UP' && cellTarget === 2) hitWall = true;     // Gittiğimiz hücrenin altındaki duvara tosladık
 
     if (hitWall) {
       if (room.driverId) {
@@ -170,7 +173,6 @@ io.on('connection', (socket) => {
           const emptySpots = [];
           for(let r=0; r<room.gridSize; r++){
             for(let c=0; c<room.gridSize; c++){
-              // Hem boş kare olmalı hem de garaj/buton olmamalı (kaza sonrası temiz bir yere düşmek için)
               if(room.map[r][c] === 0) emptySpots.push({x: c, y: r});
             }
           }
@@ -291,7 +293,6 @@ function loadLevel(roomId) {
     room.movesLeft = 40 + (room.levelIndex * 10);
   }
 
-  // Hangi oyuncunun koptuğuna vs bakmaksızın rollere göre doğma noktaları kesinleştirildi
   room.players.forEach(p => {
     if (p.role === 'player1') { p.x = 0; p.y = 0; }
     if (p.role === 'player2') { p.x = room.gridSize - 1; p.y = 0; }
@@ -313,10 +314,9 @@ function sendGameState(roomId) {
       if (cell === 8 || cell === 9) return cell;
       if (cell === 3) return p.role === room.buttonVisibleTo ? 3 : 0; 
       
-      // SİHİRLİ FİLTRE BURADA: Oyuncular sadece kendi duvarlarını GÖREBİLİR!
       if (cell === 1 && p.role === 'player1') return 1; 
       if (cell === 2 && p.role === 'player2') return 2; 
-      return 0; // Kendi duvarı değilse boş (0) görür ama üstte yazdığımız fizikten dolayı çarpar!
+      return 0; 
     }));
     
     io.to(p.id).emit('gameState', {
