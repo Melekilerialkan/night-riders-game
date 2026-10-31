@@ -2,39 +2,34 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <!-- Dokunmatik yakınlaştırmayı engeller (Mobil oyun için kritik) -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Night Riders - Gece Sürüşü</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <style>
-    body { touch-action: manipulation; } /* Çift tıklama zoomunu önler */
-  </style>
+  <style> body { touch-action: manipulation; } </style>
 </head>
 <body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-start py-4 px-2">
 
-  <!-- Üst Bilgi Paneli -->
-  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-sm">
+  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2 flex justify-between items-center shadow-lg text-sm relative">
     <div>
       <span class="text-slate-400 block text-xs">ROLÜN</span>
       <span id="roleText" class="font-bold text-yellow-400">Bekleniyor...</span>
     </div>
     <div class="text-center">
       <span class="text-slate-400 block text-xs">SEVİYE</span>
-      <span id="levelText" class="font-bold text-emerald-400">1</span>
+      <span id="levelText" class="font-bold text-emerald-400">0 (Eğitim)</span>
     </div>
     <div class="text-right">
       <span class="text-slate-400 block text-xs">CAN</span>
       <span id="livesText" class="font-bold text-red-500">❤️ ❤️ ❤️</span>
     </div>
+    <button id="skipBtn" onclick="skipTutorial()" class="absolute -bottom-8 right-0 bg-slate-700 hover:bg-slate-600 text-xs px-3 py-1 rounded-full shadow hidden">⏩ Eğitimi Atla</button>
   </div>
 
-  <div id="sysMsg" class="h-6 text-yellow-300 font-bold mb-2 animate-pulse text-sm text-center">Eşleşme bekleniyor...</div>
+  <div id="sysMsg" class="h-6 text-yellow-300 font-bold mb-4 animate-pulse text-sm text-center">Eşleşme bekleniyor...</div>
 
-  <!-- Oyun Canvası -->
   <canvas id="gameCanvas" width="360" height="360" class="border-2 border-slate-700 rounded-xl bg-slate-900 shadow-2xl w-full max-w-[360px]"></canvas>
     
-  <!-- Hızlı Telsiz Komut Butonları -->
   <div class="w-full max-w-[360px] grid grid-cols-4 gap-1 mt-4">
     <button onclick="sendCmd('🛑 DUR!')" class="bg-red-600 active:bg-red-500 py-3 rounded-lg font-bold text-xs shadow">🛑 DUR</button>
     <button onclick="sendCmd('⚠️ TUZAK')" class="bg-orange-600 active:bg-orange-500 py-3 rounded-lg font-bold text-xs shadow">⚠️ TUZAK</button>
@@ -42,7 +37,6 @@
     <button onclick="sendCmd('👍 TEMİZ')" class="bg-blue-600 active:bg-blue-500 py-3 rounded-lg font-bold text-xs shadow">👍 TEMİZ</button>
   </div>
 
-  <!-- MOBİL YÖN TUŞLARI (D-PAD) -->
   <div class="mt-6 grid grid-cols-3 gap-2 w-48 mx-auto md:hidden">
     <div></div>
     <button onclick="sendMove('UP')" class="bg-slate-700 active:bg-slate-500 p-4 rounded-xl text-2xl shadow-lg border-b-4 border-slate-900">⬆️</button>
@@ -57,26 +51,35 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
+    // Görsellerin yüklenmesi
+    const imgMaviKask = new Image(); imgMaviKask.src = '/assets/mavi-kask.png';
+    const imgKirmiziKask = new Image(); imgKirmiziKask.src = '/assets/kırmızı-kask.png';
+    const imgMotor = new Image(); imgMotor.src = '/assets/motor.png';
+    const imgKapiKapali = new Image(); imgKapiKapali.src = '/assets/kapalı-garaj.png';
+    const imgKapiAcik = new Image(); imgKapiAcik.src = '/assets/açık-garaj.png';
+
     let myRole = null, myId = null;
     let currentMap = [], players = [];
-    let driverId = null, together = false;
+    let driverId = null, together = false, gateOpen = true;
     let gridSize = 6; 
 
     socket.on('roleAssigned', ({ role, lives }) => {
-      myRole = role;
-      myId = socket.id;
-      document.getElementById('roleText').innerText = role === 'player1' ? '🔵 Mavi Kask' : '🔴 Kırmızı Kask';
+      myRole = role; myId = socket.id;
+      document.getElementById('roleText').innerText = role === 'player1' ? '🔵 Mavi' : '🔴 Kırmızı';
       updateLives(lives);
     });
 
     socket.on('gameState', (data) => {
-      currentMap = data.map;
-      players = data.players;
-      driverId = data.driverId;
-      together = data.together;
-      gridSize = data.gridSize;
+      currentMap = data.map; players = data.players;
+      driverId = data.driverId; together = data.together;
+      gridSize = data.gridSize; gateOpen = data.gateOpen;
       
-      document.getElementById('levelText').innerText = data.level;
+      document.getElementById('levelText').innerText = data.level === 0 ? "0 (Eğitim)" : data.level;
+      
+      const skipBtn = document.getElementById('skipBtn');
+      if (data.level === 0) skipBtn.classList.remove('hidden');
+      else skipBtn.classList.add('hidden');
+
       updateLives(data.lives);
       render();
     });
@@ -87,73 +90,78 @@
       setTimeout(() => canvas.classList.remove('border-red-500'), 300);
     });
 
-    socket.on('msg', (text) => {
-      document.getElementById('sysMsg').innerText = text;
-    });
+    socket.on('msg', (text) => { document.getElementById('sysMsg').innerText = text; });
+    socket.on('receiveCommand', (cmd) => { document.getElementById('sysMsg').innerText = `Telsiz: ${cmd}`; });
 
-    function updateLives(l) {
-      document.getElementById('livesText').innerText = '❤️ '.repeat(l);
-    }
-
+    function updateLives(l) { document.getElementById('livesText').innerText = '❤️ '.repeat(l); }
     function sendMove(dir) { socket.emit('move', dir); }
     function sendCmd(cmd) { socket.emit('quickCommand', cmd); document.getElementById('sysMsg').innerText = `Sen: ${cmd}`; }
+    function skipTutorial() { socket.emit('skipTutorial'); }
 
     window.addEventListener('keydown', (e) => {
       const dirMap = { ArrowUp: 'UP', KeyW: 'UP', ArrowDown: 'DOWN', KeyS: 'DOWN', ArrowLeft: 'LEFT', KeyA: 'LEFT', ArrowRight: 'RIGHT', KeyD: 'RIGHT' };
       if (dirMap[e.code]) { e.preventDefault(); sendMove(dirMap[e.code]); }
     });
 
+    function drawImageWithFallback(img, fallbackText, x, y, width, height, textOffsetX, textOffsetY) {
+      if (img.complete && img.naturalHeight !== 0) {
+        ctx.drawImage(img, x, y, width, height);
+      } else {
+        ctx.font = '20px sans-serif';
+        ctx.fillText(fallbackText, x + textOffsetX, y + textOffsetY);
+      }
+    }
+
     function render() {
       const tileSize = canvas.width / gridSize;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Izgara ve Harita Nesneleri
       for (let r = 0; r < gridSize; r++) {
         for (let c = 0; c < gridSize; c++) {
           ctx.strokeStyle = '#1e293b';
           ctx.strokeRect(c * tileSize, r * tileSize, tileSize, tileSize);
 
           const val = currentMap[r][c];
-          if (val === 1) { // Mavi Duvar
+          if (val === 1) { 
             ctx.fillStyle = '#3b82f6'; ctx.fillRect(c * tileSize + tileSize - 6, r * tileSize, 6, tileSize);
-          } else if (val === 2) { // Kırmızı Duvar
+          } else if (val === 2) { 
             ctx.fillStyle = '#ef4444'; ctx.fillRect(c * tileSize, r * tileSize + tileSize - 6, tileSize, 6);
-          } else if (val === 3) { // Buton
-            ctx.fillStyle = '#eab308';
+          } else if (val === 3) { 
+            ctx.fillStyle = gateOpen ? '#4ade80' : '#eab308'; 
             ctx.beginPath(); ctx.arc(c * tileSize + tileSize/2, r * tileSize + tileSize/2, 10, 0, Math.PI*2); ctx.fill();
-          } else if (val === 4) { // Kapı
-            ctx.fillStyle = '#f97316'; ctx.fillRect(c * tileSize + 10, r * tileSize + 10, tileSize - 20, tileSize - 20);
-          } else if (val === 8) { // Motor (Haritada bekleyen)
-            ctx.font = '28px sans-serif'; ctx.fillText('🏍️', c * tileSize + 8, r * tileSize + 36);
-          } else if (val === 9) { // Garaj
-            ctx.font = '28px sans-serif'; ctx.fillText('🅿️', c * tileSize + 8, r * tileSize + 36);
+          } else if (val === 4) { 
+            if (!gateOpen) {
+              drawImageWithFallback(imgKapiKapali, '🔒', c * tileSize + 4, r * tileSize + 4, tileSize - 8, tileSize - 8, 4, 24);
+            } else {
+              drawImageWithFallback(imgKapiAcik, '🔓', c * tileSize + 4, r * tileSize + 4, tileSize - 8, tileSize - 8, 4, 24);
+            }
+          } else if (val === 8) { 
+            drawImageWithFallback(imgMotor, '🏍️', c * tileSize + 4, r * tileSize + 4, tileSize - 8, tileSize - 8, 4, 24);
+          } else if (val === 9) { 
+            ctx.font = '24px sans-serif'; ctx.fillText('🅿️', c * tileSize + 4, r * tileSize + 28);
           }
         }
       }
 
-      // Oyuncular (Kasklar)
       players.forEach(p => {
-        ctx.font = '24px sans-serif';
         const isDriver = (driverId === p.id);
+        const xPos = p.x * tileSize;
+        const yPos = p.y * tileSize;
         
-        // Beraberlerse sadece şoförün olduğu yere ikisini birden (Motor üstünde) çiz
         if (together) {
           if (isDriver) {
-            ctx.fillText('🏍️', p.x * tileSize + 2, p.y * tileSize + 36); // Motor ve şoför
-            ctx.font = '16px sans-serif';
-            ctx.fillText('🪖', p.x * tileSize + 25, p.y * tileSize + 20); // Yolcu arkada
+            drawImageWithFallback(imgMotor, '🏍️', xPos + 4, yPos + 4, tileSize - 8, tileSize - 8, 4, 24);
           }
-          return; // Yolcuyu ayrıca çizme
+          return; 
         }
 
-        // Eğer sadece biri motordaysa onu motorlu çiz
         if (isDriver) {
-          ctx.fillText('🏍️', p.x * tileSize + 8, p.y * tileSize + 36);
+          drawImageWithFallback(imgMotor, '🏍️', xPos + 4, yPos + 4, tileSize - 8, tileSize - 8, 4, 24);
         } else {
-          // Normal Kask çizimi
+          const helmetImg = p.role === 'player1' ? imgMaviKask : imgKirmiziKask;
           ctx.fillStyle = p.role === 'player1' ? '#3b82f644' : '#ef444444';
-          ctx.beginPath(); ctx.arc(p.x * tileSize + tileSize/2, p.y * tileSize + tileSize/2, 18, 0, Math.PI*2); ctx.fill();
-          ctx.fillText('🪖', p.x * tileSize + 12, p.y * tileSize + 36);
+          ctx.beginPath(); ctx.arc(xPos + tileSize/2, yPos + tileSize/2, 18, 0, Math.PI*2); ctx.fill();
+          drawImageWithFallback(helmetImg, '🪖', xPos + 8, yPos + 8, tileSize - 16, tileSize - 16, 4, 24);
         }
       });
     }
