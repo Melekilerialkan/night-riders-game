@@ -11,29 +11,32 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let rooms = {};
 
-const TUTORIAL_LEVEL = {
-  gridSize: 6,
-  map: [
-    [0, 0, 0, 0, 0, 3], // Buton Sağ Üstte
-    [0, 0, 0, 0, 0, 0],
-    [0, 0, 8, 0, 0, 0], // Motor Ortada
-    [0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 9]  // Garaj Sağ Altta
-  ]
-};
+const TUTORIAL_STEPS = [
+  {
+    msg: "BÖLÜM 1: Arkadaşın gizli butonu görüyor. Ona telsizden 'GEL' de ve yönlendir!",
+    gridSize: 6,
+    map: [
+      [0, 0, 0, 0, 0, 3],
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 8, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 9]
+    ]
+  }
+];
 
 function generateRandomLevel(levelIndex) {
-  const size = Math.min(6 + (levelIndex * 2), 12); 
+  const size = Math.min(6 + (levelIndex * 2), 10);
   let map = Array(size).fill(0).map(() => Array(size).fill(0));
 
-  map[size-1][size-1] = 9; // Garaj (Çıkış)
-  map[size-1][0] = 8;      // Motor
-  map[0][Math.floor(size/2)] = 3; // Buton
+  map[size-1][size-1] = 9; 
+  map[size-1][0] = 8;      
+  map[0][Math.floor(size/2)] = 3; 
 
   for (let r = 1; r < size - 1; r++) {
     for (let c = 1; c < size - 1; c++) {
-      if (Math.random() < 0.25) { 
+      if (Math.random() < 0.20) {
         map[r][c] = Math.random() > 0.5 ? 1 : 2;
       }
     }
@@ -42,47 +45,72 @@ function generateRandomLevel(levelIndex) {
 }
 
 io.on('connection', (socket) => {
-  let roomId = "main-room";
-  socket.join(roomId);
+  let currentRoomId = null;
 
-  if (!rooms[roomId]) {
-    rooms[roomId] = {
-      players: [], levelIndex: 0, lives: 3, 
-      gateOpen: false, driverId: null, together: false, map: [], gridSize: 6,
-      gameState: 'LOBBY',
-      buttonVisibleTo: 'player1' // YENİ: Butonu kimin göreceği
-    };
-  }
+  socket.on('joinRoom', ({ name, roomCode }) => {
+    currentRoomId = roomCode ? roomCode.trim() : "main-room";
+    
+    // Eğer oda yoksa veya sıfırlandıysa oluştur
+    if (!rooms[currentRoomId]) {
+      rooms[currentRoomId] = {
+        players: [], levelIndex: 0, motorLives: 3, 
+        gameMode: 'classic', timeLeft: 60, timerInterval: null,
+        gateOpen: false, driverId: null, together: false, map: [], gridSize: 6,
+        gameState: 'LOBBY', buttonVisibleTo: 'player1'
+      };
+    }
 
-  const room = rooms[roomId];
+    const room = rooms[currentRoomId];
 
-  if (room.players.length < 2) {
+    if (room.players.length >= 2) {
+      socket.emit('roomFull', 'Bu oda şu an dolu!');
+      return;
+    }
+
+    socket.join(currentRoomId);
     const role = room.players.length === 0 ? 'player1' : 'player2';
     const initPos = role === 'player1' ? { x: 0, y: 0 } : { x: room.gridSize - 1, y: 0 };
     
-    room.players.push({ id: socket.id, role, x: initPos.x, y: initPos.y });
-    socket.emit('roleAssigned', { role, lives: room.lives });
+    room.players.push({ id: socket.id, name: name || 'Sürücü', role, x: initPos.x, y: initPos.y });
+    socket.emit('roleAssigned', { role });
 
-    if (room.players.length === 2) sendGameState(roomId);
-  }
+    // Odaydaki herkese güncel durumu fırlat
+    sendGameState(currentRoomId);
+  });
 
-  socket.on('startGame', (startingLevel) => {
-    if (room.gameState === 'LOBBY') {
+  socket.on('startGame', ({ mode, startingLevel }) => {
+    if (!currentRoomId || !rooms[currentRoomId]) return;
+    const room = rooms[currentRoomId];
+
+    if (room.gameState === 'LOBBY' && room.players.length === 2) {
+      room.gameMode = mode;
       room.levelIndex = startingLevel;
       room.gameState = 'PLAYING';
-      loadLevel(roomId);
-      
-      if (startingLevel === 0) {
-        io.to(roomId).emit('msg', '🎓 EĞİTİM: Biriniz GİZLİ BUTONU görüyor. Görmeyen kişiyi yönlendirip butona bastırın!');
-      } else {
-        io.to(roomId).emit('msg', '🚀 Gerçek Görev Başladı!');
+      room.motorLives = 3;
+      loadLevel(currentRoomId);
+
+      if (room.gameMode === 'timed') {
+        room.timeLeft = 60;
+        if (room.timerInterval) clearInterval(room.timerInterval);
+        room.timerInterval = setInterval(() => {
+          room.timeLeft--;
+          io.to(currentRoomId).emit('timerUpdate', room.timeLeft);
+          if (room.timeLeft <= 0) {
+            clearInterval(room.timerInterval);
+            restartRoom(currentRoomId);
+            io.to(currentRoomId).emit('msg', '⏰ Süre bitti! Polisler yakaladı.');
+          }
+        }, 1000);
       }
-      sendGameState(roomId);
+      sendGameState(currentRoomId);
     }
   });
 
   socket.on('move', (dir) => {
+    if (!currentRoomId || !rooms[currentRoomId]) return;
+    const room = rooms[currentRoomId];
     if (room.players.length < 2 || room.gameState !== 'PLAYING') return;
+
     const player = room.players.find(p => p.id === socket.id);
     if (!player || (room.together && room.driverId !== player.id)) return;
 
@@ -100,24 +128,45 @@ io.on('connection', (socket) => {
     let hitWall = false;
 
     if (player.role === 'player1') {
-      if (dir === 'DOWN' && currentCell === 2) hitWall = true; 
-      if (dir === 'UP' && cellTarget === 2) hitWall = true;    
+      if (dir === 'DOWN' && currentCell === 1) hitWall = true; 
+      if (dir === 'UP' && cellTarget === 1) hitWall = true;    
     }
     if (player.role === 'player2') { 
-      if (dir === 'RIGHT' && currentCell === 1) hitWall = true; 
-      if (dir === 'LEFT' && cellTarget === 1) hitWall = true;   
+      if (dir === 'RIGHT' && currentCell === 2) hitWall = true; 
+      if (dir === 'LEFT' && cellTarget === 2) hitWall = true;   
     }
 
     if (hitWall) {
-      room.lives--;
-      io.to(roomId).emit('wallHit', { lives: room.lives });
-      if (room.lives <= 0) restartRoom(roomId);
+      room.motorLives--;
+      io.to(currentRoomId).emit('motorHit', { motorLives: room.motorLives });
+      
+      const emptySpots = [];
+      for(let r=0; r<room.gridSize; r++){
+        for(let c=0; c<room.gridSize; c++){
+          if(room.map[r][c] === 0) emptySpots.push({x: c, y: r});
+        }
+      }
+      if(emptySpots.length > 0) {
+        const randomSpot = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+        player.x = randomSpot.x;
+        player.y = randomSpot.y;
+        if(room.together) {
+          const passenger = room.players.find(p => p.id !== room.driverId);
+          passenger.x = randomSpot.x; passenger.y = randomSpot.y;
+        }
+      }
+
+      if (room.motorLives <= 0) {
+        if (room.timerInterval) clearInterval(room.timerInterval);
+        io.to(currentRoomId).emit('msg', '💥 Motor hurdaya çıktı! Bölüm yenileniyor...');
+        setTimeout(() => restartRoom(currentRoomId), 1500);
+      }
+      sendGameState(currentRoomId);
       return;
     }
 
-    // YENİ: Kapalı garaja girmeyi hasar vermeden engelle
     if (cellTarget === 9 && !room.gateOpen) {
-      io.to(roomId).emit('msg', '🔒 Garaj henüz kapalı! Önce gizli butonu bulmalısınız.');
+      io.to(currentRoomId).emit('msg', '🔒 Garaj kapalı! Önce butona basılmalı.');
       return;
     }
 
@@ -128,82 +177,87 @@ io.on('connection', (socket) => {
       passenger.x = newX; passenger.y = newY;
     }
 
-    // YENİ: Görmeyen oyuncunun butona basma mantığı
     if (cellTarget === 3 && !room.gateOpen) { 
       if (player.role !== room.buttonVisibleTo) {
         room.gateOpen = true;
-        io.to(roomId).emit('msg', room.levelIndex === 0 
-          ? '🔓 HARİKA! Garaj açıldı. Şimdi Motoru (🏍️) bulun. (İlk binen şoför olur)' 
-          : '🔓 KAPILAR AÇILDI! Motoru alıp çıkışa gidin!');
+        io.to(currentRoomId).emit('msg', '🔓 GARAJ AÇILDI! Motoru bulup alın.');
       } else {
-        io.to(roomId).emit('msg', '❌ Sen butonu görüyorsun, basamazsın! Görmeyen oyuncuyu buraya yönlendir!');
+        io.to(currentRoomId).emit('msg', '❌ Sen bu butonu görüyorsun, basamazsın! Görmeyen arkadaşını yönlendir.');
       }
     }
 
     if (cellTarget === 8 && !room.driverId) { 
       room.driverId = player.id;
       room.map[newY][newX] = 0; 
-      io.to(roomId).emit('playSound', 'motorCalisti');
-      io.to(roomId).emit('msg', room.levelIndex === 0 
-        ? '🏍️ Şoför sensin! Şimdi arkadaşının yanına gidip onu arkana al.' 
-        : '🏍️ Biri motora bindi! Arkadaşını al.');
+      io.to(currentRoomId).emit('playSound', 'motorCalisti');
+      io.to(currentRoomId).emit('msg', '🏍️ Motora bindi! Şimdi arkadaşını al.');
     }
 
     if (room.driverId === player.id && !room.together) { 
-      const otherPlayer = room.players.find(p => p.id !== player.id);
+      const otherPlayer = room.players.find(p => p.id !== room.id);
       if (player.x === otherPlayer.x && player.y === otherPlayer.y) {
         room.together = true;
-        io.to(roomId).emit('msg', room.levelIndex === 0 
-          ? '✅ Harika! Şimdi birlikte Açık Garaja girin ve eğitimi bitirin!' 
-          : '✅ Arkadaşını aldın! Çıkışa git!');
+        io.to(currentRoomId).emit('msg', '✅ Arkadaşın arkada! Çıkış garajına sür!');
       }
     }
 
     if (cellTarget === 9 && room.together) { 
-      room.levelIndex++;
-      io.to(roomId).emit('msg', room.levelIndex === 1 
-        ? `🎉 Eğitim Bitti! Gerçek Seviye ${room.levelIndex} Üretiliyor...` 
-        : `🎉 Seviye ${room.levelIndex - 1} Bitti! Yeni Seviye Üretiliyor...`);
-      loadLevel(roomId);
+      if (room.levelIndex === 0) {
+        room.gameState = 'LOBBY';
+        if (room.timerInterval) clearInterval(room.timerInterval);
+        io.to(currentRoomId).emit('msg', '🎉 Eğitim Başarıyla Tamamlandı!');
+      } else {
+        room.levelIndex++;
+        io.to(currentRoomId).emit('msg', `🎉 Seviye ${room.levelIndex} Tamamlandı!`);
+        loadLevel(currentRoomId);
+      }
     }
 
-    sendGameState(roomId);
+    sendGameState(currentRoomId);
   });
 
-  socket.on('quickCommand', (cmd) => socket.to(roomId).emit('receiveCommand', cmd));
+  socket.on('quickCommand', (cmd) => {
+    if (!currentRoomId || !rooms[currentRoomId]) return;
+    const sender = rooms[currentRoomId].players.find(p => p.id === socket.id);
+    const senderName = sender ? sender.name : 'Partner';
+    socket.to(currentRoomId).emit('popupMessage', { name: senderName, text: cmd });
+  });
 
   socket.on('disconnect', () => {
-    if (rooms[roomId]) {
-      rooms[roomId].players = rooms[roomId].players.filter(p => p.id !== socket.id);
-      if (rooms[roomId].players.length === 0) delete rooms[roomId];
+    if (currentRoomId && rooms[currentRoomId]) {
+      rooms[currentRoomId].players = rooms[currentRoomId].players.filter(p => p.id !== socket.id);
+      if (rooms[currentRoomId].players.length === 0) {
+        if (rooms[currentRoomId].timerInterval) clearInterval(rooms[currentRoomId].timerInterval);
+        delete rooms[currentRoomId];
+      } else {
+        // Biri çıkarsa kalan kişiyi lobiye düşür
+        rooms[currentRoomId].gameState = 'LOBBY';
+        sendGameState(currentRoomId);
+      }
     }
   });
 });
 
 function loadLevel(roomId) {
   const room = rooms[roomId];
-  const levelData = room.levelIndex === 0 ? TUTORIAL_LEVEL : generateRandomLevel(room.levelIndex);
+  const levelData = room.levelIndex === 0 ? TUTORIAL_STEPS[0] : generateRandomLevel(room.levelIndex);
   
   room.map = JSON.parse(JSON.stringify(levelData.map));
   room.gridSize = levelData.gridSize;
-  
-  // YENİ: Butonu her seviyede rastgele bir oyuncuya göster
   room.buttonVisibleTo = Math.random() > 0.5 ? 'player1' : 'player2';
-
   room.gateOpen = false; 
   room.driverId = null;
   room.together = false;
+  room.motorLives = 3;
 
   if(room.players[0]) { room.players[0].x = 0; room.players[0].y = 0; }
   if(room.players[1]) { room.players[1].x = room.gridSize - 1; room.players[1].y = 0; }
 }
 
-function restartRoom(roomId, fullReset = false) {
+function restartRoom(roomId) {
   const room = rooms[roomId];
-  if(fullReset) room.gameState = 'LOBBY';
-  room.lives = 3;
-  if(room.gameState === 'PLAYING') loadLevel(roomId);
-  io.to(roomId).emit('msg', '💥 Can Bitti! Baştan başlıyor.');
+  room.motorLives = 3;
+  loadLevel(roomId);
   sendGameState(roomId);
 }
 
@@ -212,20 +266,17 @@ function sendGameState(roomId) {
   room.players.forEach(p => {
     const filteredMap = room.map.map(row => row.map(cell => {
       if (cell === 8 || cell === 9) return cell;
-      
-      // Sadece seçili kişi butonu görür
       if (cell === 3) return p.role === room.buttonVisibleTo ? 3 : 0; 
-      
-      if (p.role === 'player1' && cell === 1) return 1; 
-      if (p.role === 'player2' && cell === 2) return 2; 
+      if (cell === 1 && p.role === 'player1') return 1; 
+      if (cell === 2 && p.role === 'player2') return 2; 
       return 0;
     }));
     io.to(p.id).emit('gameState', {
       map: filteredMap, players: room.players, 
-      lives: room.lives, level: room.levelIndex,
+      motorLives: room.motorLives, level: room.levelIndex,
       driverId: room.driverId, together: room.together,
       gridSize: room.gridSize, gateOpen: room.gateOpen,
-      gameState: room.gameState 
+      gameState: room.gameState, gameMode: room.gameMode, timeLeft: room.timeLeft
     });
   });
 }

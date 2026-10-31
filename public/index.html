@@ -135,12 +135,14 @@
       if (!roomCode) { alert("Lütfen bir oda kodu gir!"); return; }
       
       document.getElementById('nameScreen').classList.add('hidden');
+      document.getElementById('lobbyScreen').classList.remove('hidden');
       socket.emit('joinRoom', { name, roomCode });
     }
 
     socket.on('roomFull', (msg) => {
       alert(msg);
       document.getElementById('nameScreen').classList.remove('hidden');
+      document.getElementById('lobbyScreen').classList.add('hidden');
     });
 
     function setMode(mode) {
@@ -171,7 +173,7 @@
           status.classList.replace('text-slate-400', 'text-emerald-400');
           lobbyBtns.classList.remove('hidden');
         } else {
-          status.innerText = "Arkadaşın bekleniyor (Oda Kodu ile girmeli)...";
+          status.innerText = "Arkadaşın bekleniyor, aynı oda kodunu girmeli...";
           status.classList.replace('text-emerald-400', 'text-slate-400');
           lobbyBtns.classList.add('hidden');
         }
